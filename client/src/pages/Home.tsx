@@ -1,24 +1,220 @@
+import { useEffect, useState } from "react";
 import { Button } from "@/components/ui/button";
-import { Loader2 } from "lucide-react";
-import { Streamdown } from 'streamdown';
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { AlertCircle, LogOut, Package, History, Download } from "lucide-react";
+import { Alert, AlertDescription } from "@/components/ui/alert";
+import InventoryForm from "@/components/InventoryForm";
+import InventoryTable from "@/components/InventoryTable";
+import HistoryTable from "@/components/HistoryTable";
+import UserNameDialog from "@/components/UserNameDialog";
+import { useInventory } from "@/hooks/useInventory";
+import { exportInventoryToCSV, exportHistoryToCSV } from "@/lib/googleSheetsService";
 
-/**
- * All content in this page are only for example, replace with your own feature implementation
- * When building pages, remember your instructions in Frontend Best Practices, Design Guide and Common Pitfalls
- */
 export default function Home() {
-  // If theme is switchable in App.tsx, we can implement theme toggling like this:
-  // const { theme, toggleTheme } = useTheme();
+  const [userName, setUserName] = useState<string | null>(null);
+  const [showNameDialog, setShowNameDialog] = useState(false);
+  const { inventory, history, loading, error, isLocked, lockUser, refetch } = useInventory(userName);
+
+  // Cargar nombre de usuario desde localStorage
+  useEffect(() => {
+    const savedName = localStorage.getItem("inventarioUserName");
+    if (savedName) {
+      setUserName(savedName);
+    } else {
+      setShowNameDialog(true);
+    }
+  }, []);
+
+  const handleNameSet = (name: string) => {
+    setUserName(name);
+    localStorage.setItem("inventarioUserName", name);
+    setShowNameDialog(false);
+  };
+
+  const handleLogout = () => {
+    setUserName(null);
+    localStorage.removeItem("inventarioUserName");
+    setShowNameDialog(true);
+  };
+
+  const handleExportInventory = () => {
+    exportInventoryToCSV(inventory);
+  };
+
+  const handleExportHistory = () => {
+    exportHistoryToCSV(history);
+  };
+
+  if (!userName) {
+    return <UserNameDialog onNameSet={handleNameSet} />;
+  }
+
+  const stats = {
+    totalProducts: inventory.length,
+    totalUnits: inventory.reduce((sum, p) => sum + p.stockActual, 0),
+    lowStock: inventory.filter(p => p.stockActual > 0 && p.stockActual <= p.stockMinimo).length,
+    noStock: inventory.filter(p => p.stockActual <= 0).length,
+  };
 
   return (
-    <div className="min-h-screen flex flex-col">
-      <main>
-        {/* Example: lucide-react for icons */}
-        <Loader2 className="animate-spin" />
-        Example Page
-        {/* Example: Streamdown for markdown rendering */}
-        <Streamdown>Any **markdown** content</Streamdown>
-        <Button variant="default">Example Button</Button>
+    <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-50">
+      {/* Header */}
+      <header className="bg-white border-b border-gray-200 sticky top-0 z-40 shadow-sm">
+        <div className="container mx-auto px-4 py-4 flex items-center justify-between">
+          <div>
+            <h1 className="text-2xl font-bold text-gray-900">Inventario de Útiles de Aseo</h1>
+            <p className="text-sm text-gray-600">Gestión centralizada multiusuario</p>
+          </div>
+          <div className="flex items-center gap-4">
+            <div className="text-right">
+              <p className="text-sm font-medium text-gray-900">{userName}</p>
+              <p className="text-xs text-gray-500">Usuario activo</p>
+            </div>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={handleLogout}
+              className="gap-2"
+            >
+              <LogOut className="w-4 h-4" />
+              Salir
+            </Button>
+          </div>
+        </div>
+      </header>
+
+      {/* Main Content */}
+      <main className="container mx-auto px-4 py-8">
+        {/* Error Alert */}
+        {error && (
+          <Alert variant="destructive" className="mb-6">
+            <AlertCircle className="h-4 w-4" />
+            <AlertDescription>{error}</AlertDescription>
+          </Alert>
+        )}
+
+        {/* Lock Alert */}
+        {isLocked && (
+          <Alert className="mb-6 bg-yellow-50 border-yellow-200">
+            <AlertCircle className="h-4 w-4 text-yellow-600" />
+            <AlertDescription className="text-yellow-800">
+              El inventario está siendo modificado por <strong>{lockUser}</strong>. Por favor espera...
+            </AlertDescription>
+          </Alert>
+        )}
+
+        {/* Stats Cards */}
+        <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-8">
+          <Card>
+            <CardContent className="pt-6">
+              <div className="text-center">
+                <p className="text-sm text-gray-600 mb-2">Total de Productos</p>
+                <p className="text-3xl font-bold text-blue-600">{stats.totalProducts}</p>
+              </div>
+            </CardContent>
+          </Card>
+          <Card>
+            <CardContent className="pt-6">
+              <div className="text-center">
+                <p className="text-sm text-gray-600 mb-2">Total de Unidades</p>
+                <p className="text-3xl font-bold text-green-600">{stats.totalUnits}</p>
+              </div>
+            </CardContent>
+          </Card>
+          <Card>
+            <CardContent className="pt-6">
+              <div className="text-center">
+                <p className="text-sm text-gray-600 mb-2">Bajo Mínimo</p>
+                <p className="text-3xl font-bold text-orange-600">{stats.lowStock}</p>
+              </div>
+            </CardContent>
+          </Card>
+          <Card>
+            <CardContent className="pt-6">
+              <div className="text-center">
+                <p className="text-sm text-gray-600 mb-2">Sin Stock</p>
+                <p className="text-3xl font-bold text-red-600">{stats.noStock}</p>
+              </div>
+            </CardContent>
+          </Card>
+        </div>
+
+        {/* Tabs */}
+        <Tabs defaultValue="form" className="w-full">
+          <TabsList className="grid w-full grid-cols-3">
+            <TabsTrigger value="form" className="gap-2">
+              <Package className="w-4 h-4" />
+              Registrar Movimiento
+            </TabsTrigger>
+            <TabsTrigger value="inventory" className="gap-2">
+              <Package className="w-4 h-4" />
+              Inventario
+            </TabsTrigger>
+            <TabsTrigger value="history" className="gap-2">
+              <History className="w-4 h-4" />
+              Historial
+            </TabsTrigger>
+          </TabsList>
+
+          <TabsContent value="form" className="mt-6">
+            <InventoryForm
+              userName={userName}
+              onMovementSuccess={refetch}
+              isLocked={isLocked}
+            />
+          </TabsContent>
+
+          <TabsContent value="inventory" className="mt-6">
+            <Card>
+              <CardHeader className="flex flex-row items-center justify-between">
+                <div>
+                  <CardTitle>Inventario Actual</CardTitle>
+                  <CardDescription>
+                    {inventory.length} productos en el sistema
+                  </CardDescription>
+                </div>
+                <Button
+                  onClick={handleExportInventory}
+                  variant="outline"
+                  size="sm"
+                  className="gap-2"
+                >
+                  <Download className="w-4 h-4" />
+                  Descargar CSV
+                </Button>
+              </CardHeader>
+              <CardContent>
+                <InventoryTable products={inventory} />
+              </CardContent>
+            </Card>
+          </TabsContent>
+
+          <TabsContent value="history" className="mt-6">
+            <Card>
+              <CardHeader className="flex flex-row items-center justify-between">
+                <div>
+                  <CardTitle>Historial de Movimientos</CardTitle>
+                  <CardDescription>
+                    {history.length} movimientos registrados
+                  </CardDescription>
+                </div>
+                <Button
+                  onClick={handleExportHistory}
+                  variant="outline"
+                  size="sm"
+                  className="gap-2"
+                >
+                  <Download className="w-4 h-4" />
+                  Descargar CSV
+                </Button>
+              </CardHeader>
+              <CardContent>
+                <HistoryTable movements={history} />
+              </CardContent>
+            </Card>
+          </TabsContent>
+        </Tabs>
       </main>
     </div>
   );
