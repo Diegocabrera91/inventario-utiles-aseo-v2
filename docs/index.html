@@ -7,6 +7,18 @@
       name="viewport"
       content="width=device-width, initial-scale=1.0, maximum-scale=1" />
     <title>Inventario de Útiles de Aseo V2</title>
+    <script>
+      // Workaround para GitHub Pages + Wouter:
+      // Reescribir la URL para que Wouter vea "/" en lugar de "/inventario-utiles-aseo-v2/"
+      (function() {
+        var base = '/inventario-utiles-aseo-v2';
+        var path = window.location.pathname;
+        if (path.indexOf(base) === 0) {
+          var newPath = path.slice(base.length) || '/';
+          window.history.replaceState(null, '', newPath + window.location.search + window.location.hash);
+        }
+      })();
+    </script>
     <script type="module" crossorigin src="./assets/index-BBgfmdaN.js"></script>
     <link rel="stylesheet" crossorigin href="./assets/index-v0v4UdK3.css">
   </head>
