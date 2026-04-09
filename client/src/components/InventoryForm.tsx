@@ -12,7 +12,8 @@ import {
 } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
 import { Alert, AlertDescription } from "@/components/ui/alert";
-import { Loader2, CheckCircle, AlertCircle } from "lucide-react";
+import { Loader2, CheckCircle, AlertCircle, Camera } from "lucide-react";
+import BarcodeScanner from "./BarcodeScanner";
 
 interface InventoryFormProps {
   userName: string;
@@ -37,6 +38,12 @@ export default function InventoryForm({
     type: "success" | "error" | "info";
     text: string;
   } | null>(null);
+  const [scannerOpen, setScannerOpen] = useState(false);
+
+  const handleBarcodeDetected = (code: string) => {
+    setCodigo(code);
+    // Autocompletar si es necesario (aquí iría la lógica)
+  };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -141,20 +148,32 @@ export default function InventoryForm({
         <form onSubmit={handleSubmit} className="space-y-6">
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             {/* Código */}
-            <div className="space-y-2">
+            <div className="space-y-2 md:col-span-2">
               <Label htmlFor="codigo">Código de Barras *</Label>
-              <Input
-                id="codigo"
-                type="text"
-                placeholder="Ej: 001, SKU-123..."
-                value={codigo}
-                onChange={(e) => setCodigo(e.target.value)}
-                disabled={isLocked || loading}
-              />
+              <div className="flex gap-2">
+                <Input
+                  id="codigo"
+                  type="text"
+                  placeholder="Ej: 001, SKU-123..."
+                  value={codigo}
+                  onChange={(e) => setCodigo(e.target.value)}
+                  disabled={isLocked || loading}
+                />
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="icon"
+                  onClick={() => setScannerOpen(true)}
+                  disabled={isLocked || loading}
+                  title="Escanear código de barras"
+                >
+                  <Camera className="w-4 h-4" />
+                </Button>
+              </div>
             </div>
 
             {/* Descripción */}
-            <div className="space-y-2">
+            <div className="space-y-2 md:col-span-2">
               <Label htmlFor="descripcion">Descripción *</Label>
               <Input
                 id="descripcion"
@@ -270,6 +289,12 @@ export default function InventoryForm({
             </Button>
           </div>
         </form>
+
+        <BarcodeScanner
+          isOpen={scannerOpen}
+          onClose={() => setScannerOpen(false)}
+          onBarcodeDetected={handleBarcodeDetected}
+        />
       </CardContent>
     </Card>
   );
