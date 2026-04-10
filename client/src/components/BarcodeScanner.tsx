@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, useCallback } from "react";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Alert, AlertDescription } from "@/components/ui/alert";
@@ -11,6 +11,29 @@ interface BarcodeScannerProps {
   onBarcodeDetected: (code: string) => void;
 }
 
+function resetVideoElement(container: HTMLDivElement | null) {
+  if (!container) return;
+  const videos = container.querySelectorAll("video");
+  videos.forEach((video) => {
+    try { video.pause(); } catch (_) {}
+    try {
+      const stream = video.srcObject as MediaStream | null;
+      if (stream) stream.getTracks().forEach((t) => { try { t.stop(); } catch (_) {} });
+    } catch (_) {}
+    try { video.srcObject = null; } catch (_) {}
+    try { video.removeAttribute("src"); } catch (_) {}
+    try { video.load(); } catch (_) {}
+  });
+}
+
+async function stopQuagga(container: HTMLDivElement | null) {
+  try { Quagga.offDetected(); } catch (_) {}
+  try { Quagga.stop(); } catch (_) {}
+  // pequeña pausa para que el navegador libere la cámara
+  await new Promise((r) => setTimeout(r, 150));
+  resetVideoElement(container);
+}
+
 export default function BarcodeScanner({
   isOpen,
   onClose,
@@ -20,17 +43,38 @@ export default function BarcodeScanner({
   const [error, setError] = useState<string | null>(null);
   const [isInitializing, setIsInitializing] = useState(false);
   const [lastDetectedCode, setLastDetectedCode] = useState<string | null>(null);
-  const [lastDetectionTime, setLastDetectionTime] = useState<number>(0);
+
+  // Usar ref para el anti-duplicado en lugar de estado (evita re-ejecución del efecto)
+  const lastDetectionTimeRef = useRef<number>(0);
+  const lastDetectedCodeRef = useRef<string | null>(null);
+  const isStoppingRef = useRef(false);
+
+  const handleClose = useCallback(async () => {
+    if (isStoppingRef.current) return;
+    isStoppingRef.current = true;
+    await stopQuagga(scannerRef.current);
+    setLastDetectedCode(null);
+    lastDetectedCodeRef.current = null;
+    lastDetectionTimeRef.current = 0;
+    setError(null);
+    isStoppingRef.current = false;
+    onClose();
+  }, [onClose]);
 
   useEffect(() => {
     if (!isOpen || !scannerRef.current) return;
 
+    let cancelled = false;
+
     const initScanner = async () => {
+      // Limpiar cualquier instancia previa antes de iniciar
+      await stopQuagga(scannerRef.current);
+      if (cancelled) return;
+
       setIsInitializing(true);
       setError(null);
 
       try {
-        // Inicializar Quagga
         await Quagga.init(
           {
             inputStream: {
@@ -59,6 +103,7 @@ export default function BarcodeScanner({
             frequency: 10,
           },
           (err) => {
+            if (cancelled) return;
             if (err) {
               console.error("Error initializing Quagga:", err);
               setError("No se pudo acceder a la cámara. Verifica los permisos.");
@@ -66,14 +111,30 @@ export default function BarcodeScanner({
               return;
             }
 
+            // Forzar atributos en el video que Quagga crea
+            if (scannerRef.current) {
+              const videos = scannerRef.current.querySelectorAll("video");
+              videos.forEach((v) => {
+                v.setAttribute("autoplay", "true");
+                v.setAttribute("muted", "true");
+                v.setAttribute("playsinline", "true");
+                v.muted = true;
+                v.onloadedmetadata = () => {
+                  v.play().catch((e) => console.warn("play() failed:", e));
+                };
+                // Forzar play por si loadedmetadata ya pasó
+                setTimeout(() => {
+                  v.play().catch(() => {});
+                }, 300);
+              });
+            }
+
             Quagga.start();
             setIsInitializing(false);
-
-            // Configurar detección de códigos
-            Quagga.onDetected(onDetected);
           }
         );
       } catch (err) {
+        if (cancelled) return;
         console.error("Error setting up scanner:", err);
         setError(
           err instanceof Error
@@ -88,47 +149,38 @@ export default function BarcodeScanner({
       const code = result?.codeResult?.code;
       if (!code) return;
 
-      // Evitar detecciones duplicadas en menos de 1 segundo
       const now = Date.now();
-      if (code === lastDetectedCode && now - lastDetectionTime < 1000) {
+      if (
+        code === lastDetectedCodeRef.current &&
+        now - lastDetectionTimeRef.current < 1000
+      ) {
         return;
       }
 
+      lastDetectedCodeRef.current = code;
+      lastDetectionTimeRef.current = now;
       setLastDetectedCode(code);
-      setLastDetectionTime(now);
 
-      // Notificar al componente padre
       onBarcodeDetected(code);
 
-      // Cerrar el scanner automáticamente
       setTimeout(() => {
         handleClose();
       }, 500);
     };
 
-    initScanner();
+    initScanner().then(() => {
+      if (!cancelled) {
+        Quagga.onDetected(onDetected);
+      }
+    });
 
     return () => {
-      try {
-        Quagga.offDetected(onDetected);
-        Quagga.stop();
-      } catch (err) {
-        console.warn("Error cleaning up scanner:", err);
-      }
+      cancelled = true;
+      Quagga.offDetected(onDetected);
+      stopQuagga(scannerRef.current);
     };
-  }, [isOpen, lastDetectedCode, lastDetectionTime, onBarcodeDetected]);
-
-  const handleClose = () => {
-    try {
-      Quagga.stop();
-    } catch (err) {
-      console.warn("Error stopping scanner:", err);
-    }
-    setLastDetectedCode(null);
-    setLastDetectionTime(0);
-    setError(null);
-    onClose();
-  };
+  // Solo se re-ejecuta cuando isOpen cambia — no al detectar códigos
+  }, [isOpen]); // eslint-disable-line react-hooks/exhaustive-deps
 
   return (
     <Dialog open={isOpen} onOpenChange={handleClose}>
