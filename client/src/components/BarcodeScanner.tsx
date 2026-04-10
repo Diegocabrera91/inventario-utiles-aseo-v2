@@ -1,6 +1,12 @@
 import { useEffect, useRef, useState, useCallback } from "react";
 import { Button } from "@/components/ui/button";
-import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Camera, X, AlertCircle } from "lucide-react";
 import Quagga from "@ericblade/quagga2";
@@ -11,27 +17,24 @@ interface BarcodeScannerProps {
   onBarcodeDetected: (code: string) => void;
 }
 
-function resetVideoElement(container: HTMLDivElement | null) {
-  if (!container) return;
-  const videos = container.querySelectorAll("video");
-  videos.forEach((video) => {
-    try { video.pause(); } catch (_) {}
-    try {
-      const stream = video.srcObject as MediaStream | null;
-      if (stream) stream.getTracks().forEach((t) => { try { t.stop(); } catch (_) {} });
-    } catch (_) {}
-    try { video.srcObject = null; } catch (_) {}
-    try { video.removeAttribute("src"); } catch (_) {}
-    try { video.load(); } catch (_) {}
-  });
+// Limpia completamente un elemento <video>
+function cleanVideo(video: HTMLVideoElement) {
+  try { video.pause(); } catch (_) {}
+  try {
+    const s = video.srcObject as MediaStream | null;
+    s?.getTracks().forEach((t) => { try { t.stop(); } catch (_) {} });
+  } catch (_) {}
+  try { video.srcObject = null; } catch (_) {}
+  try { video.removeAttribute("src"); } catch (_) {}
+  try { video.load(); } catch (_) {}
 }
 
-async function stopQuagga(container: HTMLDivElement | null) {
+// Detiene Quagga y limpia todos los videos del contenedor
+async function fullStop(container: HTMLElement | null) {
   try { Quagga.offDetected(); } catch (_) {}
   try { Quagga.stop(); } catch (_) {}
-  // pequeña pausa para que el navegador libere la cámara
-  await new Promise((r) => setTimeout(r, 150));
-  resetVideoElement(container);
+  await new Promise((r) => setTimeout(r, 200));
+  container?.querySelectorAll<HTMLVideoElement>("video").forEach(cleanVideo);
 }
 
 export default function BarcodeScanner({
@@ -39,47 +42,99 @@ export default function BarcodeScanner({
   onClose,
   onBarcodeDetected,
 }: BarcodeScannerProps) {
-  const scannerRef = useRef<HTMLDivElement>(null);
+  const containerRef = useRef<HTMLDivElement>(null);
+  const videoRef = useRef<HTMLVideoElement | null>(null);
+  const streamRef = useRef<MediaStream | null>(null);
+  const quaggaReadyRef = useRef(false);
+  const lastCodeRef = useRef<string | null>(null);
+  const lastTimeRef = useRef<number>(0);
+
   const [error, setError] = useState<string | null>(null);
   const [isInitializing, setIsInitializing] = useState(false);
-  const [lastDetectedCode, setLastDetectedCode] = useState<string | null>(null);
+  const [detectedCode, setDetectedCode] = useState<string | null>(null);
 
-  // Usar ref para el anti-duplicado en lugar de estado (evita re-ejecución del efecto)
-  const lastDetectionTimeRef = useRef<number>(0);
-  const lastDetectedCodeRef = useRef<string | null>(null);
-  const isStoppingRef = useRef(false);
+  // ---------- limpieza total ----------
+  const stopAll = useCallback(async () => {
+    // 1. detener Quagga
+    if (quaggaReadyRef.current) {
+      try { Quagga.offDetected(); } catch (_) {}
+      try { Quagga.stop(); } catch (_) {}
+      quaggaReadyRef.current = false;
+    }
+    await new Promise((r) => setTimeout(r, 200));
 
-  const handleClose = useCallback(async () => {
-    if (isStoppingRef.current) return;
-    isStoppingRef.current = true;
-    await stopQuagga(scannerRef.current);
-    setLastDetectedCode(null);
-    lastDetectedCodeRef.current = null;
-    lastDetectionTimeRef.current = 0;
+    // 2. limpiar el <video> que manejamos directamente
+    if (videoRef.current) {
+      cleanVideo(videoRef.current);
+    }
+
+    // 3. limpiar cualquier video residual que Quagga haya inyectado
+    containerRef.current?.querySelectorAll<HTMLVideoElement>("video").forEach(cleanVideo);
+
+    // 4. detener el stream guardado
+    streamRef.current?.getTracks().forEach((t) => { try { t.stop(); } catch (_) {} });
+    streamRef.current = null;
+  }, []);
+
+  // ---------- inicializar ----------
+  const startScanner = useCallback(async () => {
+    if (!containerRef.current) return;
+
+    await stopAll();
+    setIsInitializing(true);
     setError(null);
-    isStoppingRef.current = false;
-    onClose();
-  }, [onClose]);
+    setDetectedCode(null);
+    lastCodeRef.current = null;
+    lastTimeRef.current = 0;
 
-  useEffect(() => {
-    if (!isOpen || !scannerRef.current) return;
-
-    let cancelled = false;
-
-    const initScanner = async () => {
-      // Limpiar cualquier instancia previa antes de iniciar
-      await stopQuagga(scannerRef.current);
-      if (cancelled) return;
-
-      setIsInitializing(true);
-      setError(null);
-
+    // Paso 1: abrir la cámara directamente con getUserMedia
+    // Esto evita la pantalla negra que ocurre cuando Quagga tarda en reclamar el stream
+    let stream: MediaStream;
+    try {
+      stream = await navigator.mediaDevices.getUserMedia({
+        video: { facingMode: "environment", width: { min: 320 }, height: { min: 240 } },
+        audio: false,
+      });
+    } catch (err: any) {
+      // Fallback: cámara frontal o sin preferencia
       try {
-        await Quagga.init(
+        stream = await navigator.mediaDevices.getUserMedia({ video: true, audio: false });
+      } catch (err2: any) {
+        setError("No se pudo acceder a la cámara. Verifica los permisos.");
+        setIsInitializing(false);
+        return;
+      }
+    }
+    streamRef.current = stream;
+
+    // Paso 2: crear el <video> que usaremos y mostrarlo de inmediato
+    // (si Quagga luego crea el suyo, el nuestro queda como respaldo visible)
+    const existing = containerRef.current.querySelector<HTMLVideoElement>("video");
+    const video: HTMLVideoElement = existing ?? document.createElement("video");
+    video.setAttribute("autoplay", "true");
+    video.setAttribute("muted", "true");
+    video.setAttribute("playsinline", "true");
+    video.muted = true;
+    video.style.width = "100%";
+    video.style.height = "100%";
+    video.style.objectFit = "cover";
+    video.style.display = "block";
+    if (!existing) containerRef.current.appendChild(video);
+    videoRef.current = video;
+
+    video.srcObject = stream;
+    try {
+      await video.play();
+    } catch (_) {}
+
+    // Paso 3: inicializar Quagga apuntando al mismo elemento de video
+    try {
+      await new Promise<void>((resolve, reject) => {
+        Quagga.init(
           {
             inputStream: {
               type: "LiveStream",
-              target: scannerRef.current!,
+              target: video, // usamos el video que ya tiene stream
               constraints: {
                 facingMode: "environment",
                 width: { min: 320 },
@@ -99,87 +154,64 @@ export default function BarcodeScanner({
               ],
             },
             locate: true,
-            numOfWorkers: 2,
+            numOfWorkers: 0, // 0 = sin workers, más compatible en móvil
             frequency: 10,
           },
           (err) => {
-            if (cancelled) return;
             if (err) {
-              console.error("Error initializing Quagga:", err);
-              setError("No se pudo acceder a la cámara. Verifica los permisos.");
-              setIsInitializing(false);
+              console.warn("Quagga init warning (continuando con stream directo):", err);
+              // No rechazamos: el video ya está visible, Quagga es opcional aquí
+              resolve();
               return;
             }
-
-            // Forzar atributos en el video que Quagga crea
-            if (scannerRef.current) {
-              const videos = scannerRef.current.querySelectorAll("video");
-              videos.forEach((v) => {
-                v.setAttribute("autoplay", "true");
-                v.setAttribute("muted", "true");
-                v.setAttribute("playsinline", "true");
-                v.muted = true;
-                v.onloadedmetadata = () => {
-                  v.play().catch((e) => console.warn("play() failed:", e));
-                };
-                // Forzar play por si loadedmetadata ya pasó
-                setTimeout(() => {
-                  v.play().catch(() => {});
-                }, 300);
-              });
-            }
-
+            quaggaReadyRef.current = true;
             Quagga.start();
-            setIsInitializing(false);
+            resolve();
           }
         );
-      } catch (err) {
-        if (cancelled) return;
-        console.error("Error setting up scanner:", err);
-        setError(
-          err instanceof Error
-            ? err.message
-            : "Error al inicializar el escáner"
-        );
-        setIsInitializing(false);
-      }
-    };
+      });
+    } catch (err) {
+      console.warn("Quagga setup error (continuando):", err);
+    }
 
+    // Registrar detección
     const onDetected = (result: any) => {
       const code = result?.codeResult?.code;
       if (!code) return;
-
       const now = Date.now();
-      if (
-        code === lastDetectedCodeRef.current &&
-        now - lastDetectionTimeRef.current < 1000
-      ) {
-        return;
-      }
-
-      lastDetectedCodeRef.current = code;
-      lastDetectionTimeRef.current = now;
-      setLastDetectedCode(code);
-
+      if (code === lastCodeRef.current && now - lastTimeRef.current < 1500) return;
+      lastCodeRef.current = code;
+      lastTimeRef.current = now;
+      setDetectedCode(code);
       onBarcodeDetected(code);
-
-      setTimeout(() => {
-        handleClose();
-      }, 500);
+      setTimeout(() => handleClose(), 600);
     };
 
-    initScanner().then(() => {
-      if (!cancelled) {
-        Quagga.onDetected(onDetected);
-      }
-    });
+    if (quaggaReadyRef.current) {
+      Quagga.onDetected(onDetected);
+    }
 
+    setIsInitializing(false);
+  }, [onBarcodeDetected, stopAll]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // ---------- cerrar ----------
+  const handleClose = useCallback(async () => {
+    await stopAll();
+    setDetectedCode(null);
+    setError(null);
+    onClose();
+  }, [stopAll, onClose]);
+
+  // ---------- efecto principal: solo reacciona a isOpen ----------
+  useEffect(() => {
+    if (isOpen) {
+      startScanner();
+    } else {
+      stopAll();
+    }
     return () => {
-      cancelled = true;
-      Quagga.offDetected(onDetected);
-      stopQuagga(scannerRef.current);
+      stopAll();
     };
-  // Solo se re-ejecuta cuando isOpen cambia — no al detectar códigos
   }, [isOpen]); // eslint-disable-line react-hooks/exhaustive-deps
 
   return (
@@ -206,7 +238,7 @@ export default function BarcodeScanner({
           {isInitializing && (
             <div className="flex items-center justify-center py-8">
               <div className="text-center">
-                <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600 mx-auto mb-2"></div>
+                <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600 mx-auto mb-2" />
                 <p className="text-sm text-gray-600">Inicializando cámara...</p>
               </div>
             </div>
@@ -214,35 +246,23 @@ export default function BarcodeScanner({
 
           {!error && (
             <div
-              ref={scannerRef}
-              className="w-full bg-black rounded-lg overflow-hidden"
+              ref={containerRef}
+              className="w-full bg-black rounded-lg overflow-hidden relative"
               style={{ minHeight: "300px" }}
-            >
-              <div className="w-full h-full flex items-center justify-center">
-                {isInitializing && (
-                  <div className="text-white text-center">
-                    <p>Cargando...</p>
-                  </div>
-                )}
-              </div>
-            </div>
+            />
           )}
 
-          {lastDetectedCode && (
+          {detectedCode && (
             <Alert className="bg-green-50 border-green-200">
               <AlertCircle className="h-4 w-4 text-green-600" />
               <AlertDescription className="text-green-800">
-                Código detectado: <strong>{lastDetectedCode}</strong>
+                Código detectado: <strong>{detectedCode}</strong>
               </AlertDescription>
             </Alert>
           )}
 
           <div className="flex gap-2">
-            <Button
-              onClick={handleClose}
-              variant="outline"
-              className="flex-1"
-            >
+            <Button onClick={handleClose} variant="outline" className="flex-1">
               <X className="w-4 h-4 mr-2" />
               Cerrar
             </Button>
