@@ -8,7 +8,7 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { Alert, AlertDescription } from "@/components/ui/alert";
-import { Camera, X, AlertCircle } from "lucide-react";
+import { Camera, X, AlertCircle, Loader2 } from "lucide-react";
 import Quagga from "@ericblade/quagga2";
 
 interface BarcodeScannerProps {
@@ -17,195 +17,259 @@ interface BarcodeScannerProps {
   onBarcodeDetected: (code: string) => void;
 }
 
-// Limpia completamente un elemento <video>
-function cleanVideo(video: HTMLVideoElement) {
-  try { video.pause(); } catch (_) {}
-  try {
-    const s = video.srcObject as MediaStream | null;
-    s?.getTracks().forEach((t) => { try { t.stop(); } catch (_) {} });
-  } catch (_) {}
-  try { video.srcObject = null; } catch (_) {}
-  try { video.removeAttribute("src"); } catch (_) {}
-  try { video.load(); } catch (_) {}
-}
+const BARCODE_FORMATS = [
+  "ean_13",
+  "ean_8",
+  "code_128",
+  "code_39",
+  "code_93",
+  "qr_code",
+  "upc_a",
+  "upc_e",
+  "itf",
+  "codabar",
+] as const;
 
-// Detiene Quagga y limpia todos los videos del contenedor
-async function fullStop(container: HTMLElement | null) {
-  try { Quagga.offDetected(); } catch (_) {}
-  try { Quagga.stop(); } catch (_) {}
-  await new Promise((r) => setTimeout(r, 200));
-  container?.querySelectorAll<HTMLVideoElement>("video").forEach(cleanVideo);
-}
+const QUAGGA_READERS = [
+  "code_128_reader",
+  "ean_reader",
+  "ean_8_reader",
+  "upc_reader",
+  "upc_e_reader",
+  "code_39_reader",
+  "code_93_reader",
+  "codabar_reader",
+];
 
 export default function BarcodeScanner({
   isOpen,
   onClose,
   onBarcodeDetected,
 }: BarcodeScannerProps) {
-  const containerRef = useRef<HTMLDivElement>(null);
   const videoRef = useRef<HTMLVideoElement | null>(null);
+  const containerRef = useRef<HTMLDivElement | null>(null);
   const streamRef = useRef<MediaStream | null>(null);
-  const quaggaReadyRef = useRef(false);
+  const animFrameRef = useRef<number | null>(null);
+  const quaggaActiveRef = useRef(false);
   const lastCodeRef = useRef<string | null>(null);
   const lastTimeRef = useRef<number>(0);
 
   const [error, setError] = useState<string | null>(null);
-  const [isInitializing, setIsInitializing] = useState(false);
+  const [loading, setLoading] = useState(false);
+  const [scanning, setScanning] = useState(false);
   const [detectedCode, setDetectedCode] = useState<string | null>(null);
 
-  // ---------- limpieza total ----------
+  // Detectar soporte de BarcodeDetector al montar
+  const hasBarcodeDetector =
+    typeof window !== "undefined" && "BarcodeDetector" in window;
+
+  // ---------- limpieza ----------
   const stopAll = useCallback(async () => {
-    // 1. detener Quagga
-    if (quaggaReadyRef.current) {
+    // Cancelar animation frame
+    if (animFrameRef.current !== null) {
+      cancelAnimationFrame(animFrameRef.current);
+      animFrameRef.current = null;
+    }
+
+    // Detener Quagga si estaba activo
+    if (quaggaActiveRef.current) {
       try { Quagga.offDetected(); } catch (_) {}
       try { Quagga.stop(); } catch (_) {}
-      quaggaReadyRef.current = false;
+      quaggaActiveRef.current = false;
+      await new Promise((r) => setTimeout(r, 150));
     }
-    await new Promise((r) => setTimeout(r, 200));
 
-    // 2. limpiar el <video> que manejamos directamente
+    // Detener stream de cámara
+    if (streamRef.current) {
+      streamRef.current.getTracks().forEach((t) => {
+        try { t.stop(); } catch (_) {}
+      });
+      streamRef.current = null;
+    }
+
+    // Limpiar video
     if (videoRef.current) {
-      cleanVideo(videoRef.current);
+      try { videoRef.current.pause(); } catch (_) {}
+      try { videoRef.current.srcObject = null; } catch (_) {}
     }
 
-    // 3. limpiar cualquier video residual que Quagga haya inyectado
-    containerRef.current?.querySelectorAll<HTMLVideoElement>("video").forEach(cleanVideo);
-
-    // 4. detener el stream guardado
-    streamRef.current?.getTracks().forEach((t) => { try { t.stop(); } catch (_) {} });
-    streamRef.current = null;
+    // Limpiar videos residuales de Quagga en el contenedor
+    containerRef.current?.querySelectorAll<HTMLVideoElement>("video").forEach((v) => {
+      try { v.pause(); } catch (_) {}
+      try { (v.srcObject as MediaStream | null)?.getTracks().forEach((t) => t.stop()); } catch (_) {}
+      try { v.srcObject = null; } catch (_) {}
+    });
   }, []);
 
-  // ---------- inicializar ----------
-  const startScanner = useCallback(async () => {
+  // ---------- detección con BarcodeDetector ----------
+  const startNativeDetection = useCallback(
+    (detector: BarcodeDetector) => {
+      setScanning(true);
+
+      const detect = async () => {
+        try {
+          const video = videoRef.current;
+          if (video && video.readyState >= 2) {
+            const barcodes = await detector.detect(video);
+            if (barcodes.length > 0) {
+              const code = barcodes[0].rawValue;
+              if (code) {
+                stopAll();
+                onBarcodeDetected(code);
+                return;
+              }
+            }
+          }
+        } catch (_) {}
+        animFrameRef.current = requestAnimationFrame(detect);
+      };
+
+      animFrameRef.current = requestAnimationFrame(detect);
+    },
+    [onBarcodeDetected, stopAll]
+  );
+
+  // ---------- detección con Quagga (fallback) ----------
+  const startQuaggaDetection = useCallback(async () => {
     if (!containerRef.current) return;
 
-    await stopAll();
-    setIsInitializing(true);
-    setError(null);
-    setDetectedCode(null);
-    lastCodeRef.current = null;
-    lastTimeRef.current = 0;
-
-    // Paso 1: abrir la cámara directamente con getUserMedia
-    // Esto evita la pantalla negra que ocurre cuando Quagga tarda en reclamar el stream
-    let stream: MediaStream;
     try {
-      stream = await navigator.mediaDevices.getUserMedia({
-        video: { facingMode: "environment", width: { min: 320 }, height: { min: 240 } },
-        audio: false,
-      });
-    } catch (err: any) {
-      // Fallback: cámara frontal o sin preferencia
-      try {
-        stream = await navigator.mediaDevices.getUserMedia({ video: true, audio: false });
-      } catch (err2: any) {
-        setError("No se pudo acceder a la cámara. Verifica los permisos.");
-        setIsInitializing(false);
-        return;
-      }
-    }
-    streamRef.current = stream;
-
-    // Paso 2: crear el <video> que usaremos y mostrarlo de inmediato
-    // (si Quagga luego crea el suyo, el nuestro queda como respaldo visible)
-    const existing = containerRef.current.querySelector<HTMLVideoElement>("video");
-    const video: HTMLVideoElement = existing ?? document.createElement("video");
-    video.setAttribute("autoplay", "true");
-    video.setAttribute("muted", "true");
-    video.setAttribute("playsinline", "true");
-    video.muted = true;
-    video.style.width = "100%";
-    video.style.height = "100%";
-    video.style.objectFit = "cover";
-    video.style.display = "block";
-    if (!existing) containerRef.current.appendChild(video);
-    videoRef.current = video;
-
-    video.srcObject = stream;
-    try {
-      await video.play();
-    } catch (_) {}
-
-    // Paso 3: inicializar Quagga apuntando al mismo elemento de video
-    try {
-      await new Promise<void>((resolve, reject) => {
+      await new Promise<void>((resolve) => {
         Quagga.init(
           {
             inputStream: {
               type: "LiveStream",
-              target: video, // usamos el video que ya tiene stream
+              target: containerRef.current!,
               constraints: {
                 facingMode: "environment",
                 width: { min: 320 },
                 height: { min: 240 },
               },
             },
-            decoder: {
-              readers: [
-                "code_128_reader",
-                "ean_reader",
-                "ean_8_reader",
-                "upc_reader",
-                "upc_e_reader",
-                "code_39_reader",
-                "code_93_reader",
-                "codabar_reader",
-              ],
-            },
+            decoder: { readers: QUAGGA_READERS },
             locate: true,
-            numOfWorkers: 0, // 0 = sin workers, más compatible en móvil
+            numOfWorkers: 0,
             frequency: 10,
           },
           (err) => {
             if (err) {
-              console.warn("Quagga init warning (continuando con stream directo):", err);
-              // No rechazamos: el video ya está visible, Quagga es opcional aquí
+              console.warn("Quagga init error:", err);
               resolve();
               return;
             }
-            quaggaReadyRef.current = true;
+            quaggaActiveRef.current = true;
             Quagga.start();
             resolve();
           }
         );
       });
+
+      if (quaggaActiveRef.current) {
+        setScanning(true);
+        Quagga.offDetected();
+        Quagga.onDetected((result: any) => {
+          const code = result?.codeResult?.code;
+          if (!code) return;
+          const now = Date.now();
+          if (code === lastCodeRef.current && now - lastTimeRef.current < 1500) return;
+          lastCodeRef.current = code;
+          lastTimeRef.current = now;
+          setDetectedCode(code);
+          stopAll().then(() => {
+            onBarcodeDetected(code);
+          });
+        });
+      }
     } catch (err) {
-      console.warn("Quagga setup error (continuando):", err);
+      console.warn("Quagga setup error:", err);
     }
+  }, [onBarcodeDetected, stopAll]);
 
-    // Registrar detección
-    const onDetected = (result: any) => {
-      const code = result?.codeResult?.code;
-      if (!code) return;
-      const now = Date.now();
-      if (code === lastCodeRef.current && now - lastTimeRef.current < 1500) return;
-      lastCodeRef.current = code;
-      lastTimeRef.current = now;
-      setDetectedCode(code);
-      onBarcodeDetected(code);
-      setTimeout(() => handleClose(), 600);
-    };
+  // ---------- iniciar cámara ----------
+  const startCamera = useCallback(async () => {
+    if (!containerRef.current) return;
 
-    if (quaggaReadyRef.current) {
-      Quagga.onDetected(onDetected);
+    await stopAll();
+    setLoading(true);
+    setError(null);
+    setDetectedCode(null);
+    setScanning(false);
+    lastCodeRef.current = null;
+    lastTimeRef.current = 0;
+
+    try {
+      // Solicitar cámara trasera, con fallback a cualquier cámara
+      let stream: MediaStream;
+      try {
+        stream = await navigator.mediaDevices.getUserMedia({
+          video: {
+            facingMode: { ideal: "environment" },
+            width: { ideal: 1280 },
+            height: { ideal: 720 },
+          },
+          audio: false,
+        });
+      } catch {
+        stream = await navigator.mediaDevices.getUserMedia({
+          video: true,
+          audio: false,
+        });
+      }
+
+      streamRef.current = stream;
+
+      // Si BarcodeDetector está disponible: montar video manualmente
+      if (hasBarcodeDetector) {
+        const video = videoRef.current!;
+        video.srcObject = stream;
+
+        await new Promise<void>((resolve) => {
+          video.onloadedmetadata = () => resolve();
+        });
+
+        await video.play();
+        setLoading(false);
+
+        // Iniciar detección nativa
+        const detector = new (window as any).BarcodeDetector({
+          formats: BARCODE_FORMATS,
+        }) as BarcodeDetector;
+
+        startNativeDetection(detector);
+      } else {
+        // Fallback: Quagga maneja el video internamente
+        setLoading(false);
+        await startQuaggaDetection();
+      }
+    } catch (err: any) {
+      console.error("Error accediendo a la cámara:", err);
+      setLoading(false);
+      setScanning(false);
+
+      if (err?.name === "NotAllowedError" || err?.name === "PermissionDeniedError") {
+        setError("Permiso de cámara denegado. Ve a Configuración > Permisos del sitio y habilita la cámara.");
+      } else if (err?.name === "NotFoundError") {
+        setError("No se encontró ninguna cámara en este dispositivo.");
+      } else {
+        setError("No se pudo acceder a la cámara. Verifica que no esté en uso por otra aplicación.");
+      }
     }
-
-    setIsInitializing(false);
-  }, [onBarcodeDetected, stopAll]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [hasBarcodeDetector, startNativeDetection, startQuaggaDetection, stopAll]);
 
   // ---------- cerrar ----------
   const handleClose = useCallback(async () => {
     await stopAll();
     setDetectedCode(null);
     setError(null);
+    setScanning(false);
+    setLoading(false);
     onClose();
   }, [stopAll, onClose]);
 
-  // ---------- efecto principal: solo reacciona a isOpen ----------
+  // ---------- efecto principal ----------
   useEffect(() => {
     if (isOpen) {
-      startScanner();
+      startCamera();
     } else {
       stopAll();
     }
@@ -216,8 +280,8 @@ export default function BarcodeScanner({
 
   return (
     <Dialog open={isOpen} onOpenChange={handleClose}>
-      <DialogContent className="max-w-md">
-        <DialogHeader>
+      <DialogContent className="max-w-md p-0 overflow-hidden">
+        <DialogHeader className="px-4 pt-4 pb-2">
           <DialogTitle className="flex items-center gap-2">
             <Camera className="w-5 h-5" />
             Escanear Código de Barras
@@ -227,7 +291,8 @@ export default function BarcodeScanner({
           </DialogDescription>
         </DialogHeader>
 
-        <div className="space-y-4">
+        <div className="space-y-3 px-4 pb-4">
+          {/* Error */}
           {error && (
             <Alert variant="destructive">
               <AlertCircle className="h-4 w-4" />
@@ -235,23 +300,51 @@ export default function BarcodeScanner({
             </Alert>
           )}
 
-          {isInitializing && (
+          {/* Loading */}
+          {loading && (
             <div className="flex items-center justify-center py-8">
               <div className="text-center">
-                <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600 mx-auto mb-2" />
+                <Loader2 className="animate-spin h-8 w-8 text-blue-600 mx-auto mb-2" />
                 <p className="text-sm text-gray-600">Inicializando cámara...</p>
               </div>
             </div>
           )}
 
+          {/* Vista de cámara */}
           {!error && (
             <div
               ref={containerRef}
               className="w-full bg-black rounded-lg overflow-hidden relative"
               style={{ minHeight: "300px" }}
-            />
+            >
+              {/* Video para BarcodeDetector nativo */}
+              {hasBarcodeDetector && (
+                <video
+                  ref={videoRef}
+                  className="w-full h-full object-cover"
+                  playsInline
+                  muted
+                  autoPlay
+                  style={{ display: "block" }}
+                />
+              )}
+
+              {/* Marco de escaneo */}
+              {!loading && scanning && (
+                <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
+                  <div className="relative w-64 h-40">
+                    <div className="absolute top-0 left-0 w-8 h-8 border-t-4 border-l-4 border-blue-400 rounded-tl-lg" />
+                    <div className="absolute top-0 right-0 w-8 h-8 border-t-4 border-r-4 border-blue-400 rounded-tr-lg" />
+                    <div className="absolute bottom-0 left-0 w-8 h-8 border-b-4 border-l-4 border-blue-400 rounded-bl-lg" />
+                    <div className="absolute bottom-0 right-0 w-8 h-8 border-b-4 border-r-4 border-blue-400 rounded-br-lg" />
+                    <div className="absolute inset-x-0 top-1/2 h-0.5 bg-blue-400/70 animate-pulse" />
+                  </div>
+                </div>
+              )}
+            </div>
           )}
 
+          {/* Código detectado */}
           {detectedCode && (
             <Alert className="bg-green-50 border-green-200">
               <AlertCircle className="h-4 w-4 text-green-600" />
@@ -261,12 +354,59 @@ export default function BarcodeScanner({
             </Alert>
           )}
 
-          <div className="flex gap-2">
-            <Button onClick={handleClose} variant="outline" className="flex-1">
-              <X className="w-4 h-4 mr-2" />
-              Cerrar
-            </Button>
-          </div>
+          {/* Fallback manual si no hay soporte de ninguna API */}
+          {error && (
+            <div className="space-y-2">
+              <p className="text-sm text-gray-600">
+                Puedes ingresar el código manualmente:
+              </p>
+              <div className="flex gap-2">
+                <input
+                  id="manual-barcode-input"
+                  type="text"
+                  placeholder="Código de barras..."
+                  className="flex-1 px-3 py-2 border border-gray-300 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  onKeyDown={(e) => {
+                    const val = (e.target as HTMLInputElement).value.trim();
+                    if (e.key === "Enter" && val) {
+                      onBarcodeDetected(val);
+                      onClose();
+                    }
+                  }}
+                />
+                <Button
+                  onClick={() => {
+                    const el = document.getElementById("manual-barcode-input") as HTMLInputElement | null;
+                    const val = el?.value?.trim();
+                    if (val) {
+                      onBarcodeDetected(val);
+                      onClose();
+                    }
+                  }}
+                  size="sm"
+                >
+                  OK
+                </Button>
+              </div>
+            </div>
+          )}
+
+          {/* Estado de escaneo */}
+          {!loading && !error && (
+            <p className="text-center text-xs text-gray-500">
+              {scanning
+                ? "Apunta la cámara al código de barras"
+                : !hasBarcodeDetector
+                ? "Usando modo compatible (Quagga)"
+                : "Iniciando detector..."}
+            </p>
+          )}
+
+          {/* Botón cerrar */}
+          <Button onClick={handleClose} variant="outline" className="w-full">
+            <X className="w-4 h-4 mr-2" />
+            Cerrar
+          </Button>
         </div>
       </DialogContent>
     </Dialog>
