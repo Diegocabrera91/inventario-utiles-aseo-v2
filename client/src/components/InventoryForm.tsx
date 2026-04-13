@@ -14,6 +14,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Loader2, CheckCircle, AlertCircle, Camera } from "lucide-react";
 import BarcodeScanner from "./BarcodeScanner";
+import { saveMovement } from "@/lib/googleSheetsService";
 
 interface InventoryFormProps {
   userName: string;
@@ -42,7 +43,7 @@ export default function InventoryForm({
 
   const handleBarcodeDetected = (code: string) => {
     setCodigo(code);
-    // Autocompletar si es necesario (aquí iría la lógica)
+    setScannerOpen(false);
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -54,12 +55,10 @@ export default function InventoryForm({
       setMessage({ type: "error", text: "El código es requerido" });
       return;
     }
-
     if (!descripcion.trim()) {
       setMessage({ type: "error", text: "La descripción es requerida" });
       return;
     }
-
     if (parseInt(cantidad) <= 0) {
       setMessage({ type: "error", text: "La cantidad debe ser mayor a 0" });
       return;
@@ -68,18 +67,19 @@ export default function InventoryForm({
     setLoading(true);
 
     try {
-      // Aquí iría la lógica de envío a Google Sheets
-      // Por ahora es un placeholder
-      console.log({
-        codigo,
-        descripcion,
-        categoria,
-        stockMinimo,
-        tipoMovimiento,
-        cantidad,
-        observacion,
-        responsable: userName,
-      });
+      await saveMovement(
+        {
+          codigo: codigo.trim(),
+          descripcion: descripcion.trim(),
+          categoria: categoria.trim(),
+          stockMinimo: parseInt(stockMinimo) || 0,
+          tipo: tipoMovimiento,
+          cantidad: parseInt(cantidad),
+          responsable: userName,
+          observacion: observacion.trim(),
+        },
+        userName
+      );
 
       setMessage({
         type: "success",
@@ -97,11 +97,28 @@ export default function InventoryForm({
 
       // Recargar datos
       onMovementSuccess();
-    } catch (error) {
-      setMessage({
-        type: "error",
-        text: "Error al registrar el movimiento. Intenta de nuevo.",
-      });
+    } catch (error: any) {
+      const msg = error?.message || "";
+      if (msg.includes("lock")) {
+        setMessage({
+          type: "error",
+          text: "Otro usuario está guardando en este momento. Espera unos segundos e intenta de nuevo.",
+        });
+      } else if (
+        msg.includes("Failed to fetch") ||
+        msg.includes("NetworkError") ||
+        msg.includes("Load failed")
+      ) {
+        setMessage({
+          type: "error",
+          text: "Error de conexión. Verifica tu internet e intenta de nuevo.",
+        });
+      } else {
+        setMessage({
+          type: "error",
+          text: msg || "Error al registrar el movimiento. Intenta de nuevo.",
+        });
+      }
     } finally {
       setLoading(false);
     }
@@ -214,7 +231,11 @@ export default function InventoryForm({
             {/* Tipo de Movimiento */}
             <div className="space-y-2">
               <Label htmlFor="tipo">Tipo de Movimiento *</Label>
-              <Select value={tipoMovimiento} onValueChange={setTipoMovimiento} disabled={isLocked || loading}>
+              <Select
+                value={tipoMovimiento}
+                onValueChange={setTipoMovimiento}
+                disabled={isLocked || loading}
+              >
                 <SelectTrigger id="tipo">
                   <SelectValue />
                 </SelectTrigger>
@@ -253,7 +274,7 @@ export default function InventoryForm({
             />
           </div>
 
-          {/* Buttons */}
+          {/* Botones */}
           <div className="flex gap-3 pt-4">
             <Button
               type="submit"
