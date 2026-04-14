@@ -57,24 +57,25 @@ export default function Home() {
   };
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-50">
+    <div className="min-h-screen" style={{ background: "linear-gradient(135deg, #eaf3f9 0%, #d0e8f4 100%)" }}>
       {/* Header */}
-      <header className="bg-white border-b border-gray-200 sticky top-0 z-40 shadow-sm">
+      <header className="border-b border-gray-200 sticky top-0 z-40 shadow-sm" style={{ background: "#24638F" }}>
         <div className="container mx-auto px-4 py-4 flex items-center justify-between">
           <div>
-            <h1 className="text-2xl font-bold text-gray-900">Inventario de Útiles de Aseo</h1>
-            <p className="text-sm text-gray-600">Gestión centralizada multiusuario</p>
+            <h1 className="text-2xl font-bold text-white">Inventario de Útiles de Aseo</h1>
+            <p className="text-sm" style={{ color: "#b8d4e8" }}>Tooltek — Gestión centralizada multiusuario</p>
           </div>
           <div className="flex items-center gap-4">
             <div className="text-right">
-              <p className="text-sm font-medium text-gray-900">{userName}</p>
-              <p className="text-xs text-gray-500">Usuario activo</p>
+              <p className="text-sm font-medium text-white">{userName}</p>
+              <p className="text-xs" style={{ color: "#b8d4e8" }}>Usuario activo</p>
             </div>
             <Button
               variant="outline"
               size="sm"
               onClick={handleLogout}
-              className="gap-2"
+              className="gap-2 border-white text-white hover:bg-white/10"
+              style={{ borderColor: "white", color: "white", background: "transparent" }}
             >
               <LogOut className="w-4 h-4" />
               Salir
@@ -102,23 +103,23 @@ export default function Home() {
 
         {/* Stats Cards */}
         <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-8">
-          <Card>
+          <Card style={{ borderTop: "4px solid #24638F" }}>
             <CardContent className="pt-6">
               <div className="text-center">
                 <p className="text-sm text-gray-600 mb-2">Total de Productos</p>
-                <p className="text-3xl font-bold text-blue-600">{stats.totalProducts}</p>
+                <p className="text-3xl font-bold" style={{ color: "#24638F" }}>{stats.totalProducts}</p>
               </div>
             </CardContent>
           </Card>
-          <Card>
+          <Card style={{ borderTop: "4px solid #3a85b8" }}>
             <CardContent className="pt-6">
               <div className="text-center">
                 <p className="text-sm text-gray-600 mb-2">Total de Unidades</p>
-                <p className="text-3xl font-bold text-green-600">{stats.totalUnits}</p>
+                <p className="text-3xl font-bold" style={{ color: "#3a85b8" }}>{stats.totalUnits}</p>
               </div>
             </CardContent>
           </Card>
-          <Card>
+          <Card style={{ borderTop: "4px solid #e08c00" }}>
             <CardContent className="pt-6">
               <div className="text-center">
                 <p className="text-sm text-gray-600 mb-2">Bajo Mínimo</p>
@@ -126,7 +127,7 @@ export default function Home() {
               </div>
             </CardContent>
           </Card>
-          <Card>
+          <Card style={{ borderTop: "4px solid #d9534f" }}>
             <CardContent className="pt-6">
               <div className="text-center">
                 <p className="text-sm text-gray-600 mb-2">Sin Stock</p>
@@ -137,7 +138,7 @@ export default function Home() {
         </div>
 
         <Tabs defaultValue="form" className="w-full">
-          <TabsList className="grid w-full grid-cols-3">
+          <TabsList className="grid w-full grid-cols-3" style={{ background: "#eaf3f9" }}>
             <TabsTrigger value="form" className="gap-2">
               <Package className="w-4 h-4" />
               Registrar Movimiento
@@ -175,6 +176,7 @@ export default function Home() {
                   variant="outline"
                   size="sm"
                   className="gap-2"
+                  style={{ borderColor: "#24638F", color: "#24638F" }}
                 >
                   <Download className="w-4 h-4" />
                   Descargar CSV
@@ -200,6 +202,7 @@ export default function Home() {
                   variant="outline"
                   size="sm"
                   className="gap-2"
+                  style={{ borderColor: "#24638F", color: "#24638F" }}
                 >
                   <Download className="w-4 h-4" />
                   Descargar CSV
