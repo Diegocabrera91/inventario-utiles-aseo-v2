@@ -10,6 +10,26 @@ const SHEET_LOCK = "Lock";
 const LOCK_TIMEOUT = 30000; // 30 segundos
 
 // =====================================
+// HELPER: Fecha local DD/MM/YYYY (sin hora)
+// =====================================
+
+/**
+ * Devuelve la fecha actual en zona horaria de Chile (America/Santiago)
+ * formateada como DD/MM/YYYY, sin hora.
+ */
+function fechaDD_MM_YYYY() {
+  var ahora = new Date();
+  var opciones = {
+    timeZone: "America/Santiago",
+    day: "2-digit",
+    month: "2-digit",
+    year: "numeric",
+  };
+  // Formatter produce "14/04/2026" en es-CL con timeZone
+  return new Intl.DateTimeFormat("es-CL", opciones).format(ahora);
+}
+
+// =====================================
 // FUNCIÓN PRINCIPAL (doPost)
 // =====================================
 
@@ -65,39 +85,45 @@ function doPost(e) {
 
 function getData() {
   const ss = SpreadsheetApp.getActiveSpreadsheet();
-  
+
   // Obtener inventario
   const inventarioSheet = ss.getSheetByName(SHEET_INVENTARIO);
   const inventarioData = inventarioSheet.getDataRange().getValues();
-  const inventario = inventarioData.slice(1).map((row) => ({
-    codigo: row[0] || "",
-    descripcion: row[1] || "",
-    categoria: row[2] || "",
-    stockActual: row[3] || 0,
-    stockMinimo: row[4] || 0,
-    ultimoMovimiento: row[5] || "",
-  })).filter(item => item.codigo); // Filtrar filas vacías
+  const inventario = inventarioData
+    .slice(1)
+    .map((row) => ({
+      codigo: row[0] || "",
+      descripcion: row[1] || "",
+      categoria: row[2] || "",
+      stockActual: row[3] || 0,
+      stockMinimo: row[4] || 0,
+      ultimoMovimiento: row[5] ? String(row[5]) : "",
+    }))
+    .filter((item) => item.codigo); // Filtrar filas vacías
 
   // Obtener historial
   const historialSheet = ss.getSheetByName(SHEET_HISTORIAL);
   const historialData = historialSheet.getDataRange().getValues();
-  const historial = historialData.slice(1).map((row) => ({
-    fecha: row[0] || "",
-    codigo: row[1] || "",
-    descripcion: row[2] || "",
-    categoria: row[3] || "",
-    tipo: row[4] || "",
-    cantidad: row[5] || 0,
-    responsable: row[6] || "",
-    stockAntes: row[7] || 0,
-    stockDespues: row[8] || 0,
-    observacion: row[9] || "",
-  })).filter(item => item.codigo); // Filtrar filas vacías
+  const historial = historialData
+    .slice(1)
+    .map((row) => ({
+      fecha: row[0] ? String(row[0]) : "",
+      codigo: row[1] || "",
+      descripcion: row[2] || "",
+      categoria: row[3] || "",
+      tipo: row[4] || "",
+      cantidad: row[5] || 0,
+      responsable: row[6] || "",
+      stockAntes: row[7] || 0,
+      stockDespues: row[8] || 0,
+      observacion: row[9] || "",
+    }))
+    .filter((item) => item.codigo); // Filtrar filas vacías
 
   return {
     success: true,
-    inventario,
-    historial,
+    inventory: inventario,
+    history: historial,
   };
 }
 
@@ -117,7 +143,6 @@ function acquireLock(userName, timestamp) {
     const now = new Date(timestamp).getTime();
 
     if (now - lockTime < LOCK_TIMEOUT) {
-      // Lock aún activo
       return {
         success: false,
         message: `El inventario está siendo modificado por ${lastLock[0]}`,
@@ -125,7 +150,6 @@ function acquireLock(userName, timestamp) {
     }
   }
 
-  // Crear nuevo lock
   lockSheet.appendRow([userName, timestamp, true]);
 
   return {
@@ -138,7 +162,6 @@ function releaseLock(userName) {
   const ss = SpreadsheetApp.getActiveSpreadsheet();
   const lockSheet = ss.getSheetByName(SHEET_LOCK);
 
-  // Limpiar locks antiguos
   const lockData = lockSheet.getDataRange().getValues();
   if (lockData.length > 1) {
     lockSheet.deleteRows(2, lockData.length - 1);
@@ -168,7 +191,6 @@ function getLockStatus() {
   const now = new Date().getTime();
 
   if (now - lockTime > LOCK_TIMEOUT) {
-    // Lock expirado
     return {
       isLocked: false,
       lockedBy: null,
@@ -199,7 +221,7 @@ function saveMovement(movement) {
 
   for (let i = 1; i < inventarioData.length; i++) {
     if (inventarioData[i][0] === movement.codigo) {
-      productRow = i + 1; // Google Sheets usa índices de 1
+      productRow = i + 1;
       stockAntes = inventarioData[i][3];
       break;
     }
@@ -207,7 +229,6 @@ function saveMovement(movement) {
 
   let stockDespues = stockAntes;
 
-  // Calcular nuevo stock
   if (movement.tipo === "entrada") {
     stockDespues = stockAntes + movement.cantidad;
   } else if (movement.tipo === "salida") {
@@ -222,26 +243,25 @@ function saveMovement(movement) {
     stockDespues = movement.cantidad;
   }
 
-  // Actualizar o crear producto
+  // Fecha solo DD/MM/YYYY, sin hora
+  var fecha = movement.fecha || fechaDD_MM_YYYY();
+
   if (productRow > 0) {
-    // Actualizar producto existente
     inventarioSheet.getRange(productRow, 4).setValue(stockDespues);
-    inventarioSheet.getRange(productRow, 6).setValue(new Date().toLocaleString("es-ES"));
+    inventarioSheet.getRange(productRow, 6).setValue(fecha); // ultimoMovimiento
   } else {
-    // Crear nuevo producto
     inventarioSheet.appendRow([
       movement.codigo,
       movement.descripcion,
       movement.categoria,
       stockDespues,
       movement.stockMinimo,
-      new Date().toLocaleString("es-ES"),
+      fecha,
     ]);
   }
 
-  // Registrar en historial
   historialSheet.appendRow([
-    new Date().toLocaleString("es-ES"),
+    fecha,
     movement.codigo,
     movement.descripcion,
     movement.categoria,
@@ -266,6 +286,6 @@ function saveMovement(movement) {
 function testScript() {
   const result = getData();
   Logger.log("Datos cargados:");
-  Logger.log("Inventario: " + result.inventario.length + " productos");
-  Logger.log("Historial: " + result.historial.length + " movimientos");
+  Logger.log("Inventario: " + result.inventory.length + " productos");
+  Logger.log("Historial: " + result.history.length + " movimientos");
 }
