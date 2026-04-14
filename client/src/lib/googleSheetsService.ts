@@ -1,13 +1,14 @@
 /**
  * Servicio de sincronización con Google Sheets
- * 
+ *
  * Este servicio maneja:
  * - Carga de datos (inventario e historial)
  * - Guardado de movimientos
  * - Control de locks para evitar conflictos de concurrencia
  */
 
-const API_URL = import.meta.env.VITE_GOOGLE_SHEETS_API_URL || 
+const API_URL =
+  import.meta.env.VITE_GOOGLE_SHEETS_API_URL ||
   "https://script.google.com/macros/s/YOUR_SCRIPT_ID/exec";
 
 export interface Product {
@@ -40,6 +41,38 @@ export interface ApiResponse<T> {
 }
 
 /**
+ * Devuelve la fecha actual local del usuario en formato DD/MM/YYYY.
+ * Usa el huso horario del dispositivo, no UTC.
+ */
+function fechaLocal(): string {
+  const hoy = new Date();
+  const dia = String(hoy.getDate()).padStart(2, "0");
+  const mes = String(hoy.getMonth() + 1).padStart(2, "0");
+  const anio = hoy.getFullYear();
+  return `${dia}/${mes}/${anio}`;
+}
+
+/**
+ * Normaliza una cadena de fecha a DD/MM/YYYY.
+ * Acepta ISO (2026-04-14T...), YYYY-MM-DD o DD/MM/YYYY.
+ * Si no reconoce el formato, devuelve el valor original.
+ */
+function formatearFecha(fecha: string): string {
+  if (!fecha) return fecha;
+
+  // Ya está en DD/MM/YYYY
+  if (/^\d{2}\/\d{2}\/\d{4}$/.test(fecha)) return fecha;
+
+  // ISO o YYYY-MM-DD
+  const match = fecha.match(/^(\d{4})-(\d{2})-(\d{2})/);
+  if (match) {
+    return `${match[3]}/${match[2]}/${match[1]}`;
+  }
+
+  return fecha;
+}
+
+/**
  * Carga el inventario e historial desde Google Sheets
  */
 export async function loadData(): Promise<{
@@ -54,10 +87,21 @@ export async function loadData(): Promise<{
       throw new Error(data.message || "Error al cargar datos");
     }
 
-    return {
-      inventory: data.inventory || [],
-      history: data.history || [],
-    };
+    // Normalizar fechas del historial al mostrarlas
+    const history: Movement[] = (data.history || []).map((m: Movement) => ({
+      ...m,
+      fecha: formatearFecha(m.fecha),
+      ultimoMovimiento: m.fecha ? formatearFecha(m.fecha) : "",
+    }));
+
+    const inventory: Product[] = (data.inventory || []).map((p: Product) => ({
+      ...p,
+      ultimoMovimiento: p.ultimoMovimiento
+        ? formatearFecha(p.ultimoMovimiento)
+        : "",
+    }));
+
+    return { inventory, history };
   } catch (error) {
     console.error("Error loading data:", error);
     throw error;
@@ -153,7 +197,6 @@ export async function saveMovement(
   userName: string
 ): Promise<boolean> {
   try {
-    // Primero intenta adquirir el lock
     const lockAcquired = await acquireLock(userName);
     if (!lockAcquired) {
       throw new Error("No se pudo adquirir el lock. Intenta de nuevo.");
@@ -167,7 +210,7 @@ export async function saveMovement(
           action: "saveMovement",
           payload: {
             ...movement,
-            fecha: new Date().toISOString(),
+            fecha: fechaLocal(), // DD/MM/YYYY hora local del usuario
             responsable: userName,
           },
         }),
@@ -181,7 +224,6 @@ export async function saveMovement(
 
       return true;
     } finally {
-      // Siempre libera el lock
       await releaseLock(userName);
     }
   } catch (error) {
@@ -223,7 +265,7 @@ export function exportInventoryToCSV(products: Product[]): void {
   const url = URL.createObjectURL(blob);
   const link = document.createElement("a");
   link.href = url;
-  link.download = `inventario_${new Date().toISOString().split("T")[0]}.csv`;
+  link.download = `inventario_${fechaLocal().split("/").reverse().join("-")}.csv`;
   link.click();
   URL.revokeObjectURL(url);
 }
@@ -246,7 +288,7 @@ export function exportHistoryToCSV(movements: Movement[]): void {
   ];
 
   const rows = movements.map((m) => [
-    m.fecha,
+    formatearFecha(m.fecha),
     m.codigo,
     m.descripcion,
     m.categoria,
@@ -269,7 +311,7 @@ export function exportHistoryToCSV(movements: Movement[]): void {
   const url = URL.createObjectURL(blob);
   const link = document.createElement("a");
   link.href = url;
-  link.download = `historial_${new Date().toISOString().split("T")[0]}.csv`;
+  link.download = `historial_${fechaLocal().split("/").reverse().join("-")}.csv`;
   link.click();
   URL.revokeObjectURL(url);
 }
