@@ -39,32 +39,51 @@ export interface ApiResponse<T> {
 }
 
 /**
- * Devuelve la fecha actual local del usuario en formato DD/MM/YYYY.
+ * Devuelve la fecha actual local del usuario en formato YYYY-MM-DD.
  * Usa el huso horario del dispositivo, no UTC.
  */
 function fechaLocal(): string {
   const hoy = new Date();
-  const dia = String(hoy.getDate()).padStart(2, "0");
-  const mes = String(hoy.getMonth() + 1).padStart(2, "0");
   const anio = hoy.getFullYear();
-  return `${dia}/${mes}/${anio}`;
+  const mes = String(hoy.getMonth() + 1).padStart(2, "0");
+  const dia = String(hoy.getDate()).padStart(2, "0");
+  return `${anio}-${mes}-${dia}`;
 }
 
 /**
- * Normaliza una cadena de fecha a DD/MM/YYYY.
- * Acepta ISO (2026-04-14T...), YYYY-MM-DD o DD/MM/YYYY.
+ * Normaliza cualquier cadena de fecha a YYYY-MM-DD.
+ * Acepta:
+ *   - YYYY-MM-DD (ya correcto)
+ *   - DD/MM/YYYY
+ *   - ISO 8601 (2026-04-14T...)
+ *   - Formato largo JS (Tue Apr 14 2026 00:00:00 GMT-0400...)
  * Si no reconoce el formato, devuelve el valor original.
  */
 export function formatearFecha(fecha: string): string {
   if (!fecha) return fecha;
 
-  // Ya está en DD/MM/YYYY
-  if (/^\d{2}\/\d{2}\/\d{4}$/.test(fecha)) return fecha;
+  // Ya está en YYYY-MM-DD
+  if (/^\d{4}-\d{2}-\d{2}$/.test(fecha)) return fecha;
 
-  // ISO (2026-04-14T...) o YYYY-MM-DD
-  const match = fecha.match(/^(\d{4})-(\d{2})-(\d{2})/);
-  if (match) {
-    return `${match[3]}/${match[2]}/${match[1]}`;
+  // ISO 8601 con hora (2026-04-14T...)
+  const matchISO = fecha.match(/^(\d{4})-(\d{2})-(\d{2})/);
+  if (matchISO) {
+    return `${matchISO[1]}-${matchISO[2]}-${matchISO[3]}`;
+  }
+
+  // DD/MM/YYYY
+  const matchDDMMYYYY = fecha.match(/^(\d{2})\/(\d{2})\/(\d{4})$/);
+  if (matchDDMMYYYY) {
+    return `${matchDDMMYYYY[3]}-${matchDDMMYYYY[2]}-${matchDDMMYYYY[1]}`;
+  }
+
+  // Formato largo de JS: "Tue Apr 14 2026 00:00:00 GMT-0400 (hora estándar de Chile)"
+  const parsed = new Date(fecha);
+  if (!isNaN(parsed.getTime())) {
+    const anio = parsed.getFullYear();
+    const mes = String(parsed.getMonth() + 1).padStart(2, "0");
+    const dia = String(parsed.getDate()).padStart(2, "0");
+    return `${anio}-${mes}-${dia}`;
   }
 
   return fecha;
@@ -263,7 +282,7 @@ export function exportInventoryToCSV(products: Product[]): void {
   const url = URL.createObjectURL(blob);
   const link = document.createElement("a");
   link.href = url;
-  link.download = `inventario_${fechaLocal().split("/").reverse().join("-")}.csv`;
+  link.download = `inventario_${fechaLocal()}.csv`;
   link.click();
   URL.revokeObjectURL(url);
 }
@@ -309,7 +328,7 @@ export function exportHistoryToCSV(movements: Movement[]): void {
   const url = URL.createObjectURL(blob);
   const link = document.createElement("a");
   link.href = url;
-  link.download = `historial_${fechaLocal().split("/").reverse().join("-")}.csv`;
+  link.download = `historial_${fechaLocal()}.csv`;
   link.click();
   URL.revokeObjectURL(url);
 }
