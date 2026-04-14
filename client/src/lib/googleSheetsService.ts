@@ -57,13 +57,13 @@ function fechaLocal(): string {
  * Acepta ISO (2026-04-14T...), YYYY-MM-DD o DD/MM/YYYY.
  * Si no reconoce el formato, devuelve el valor original.
  */
-function formatearFecha(fecha: string): string {
+export function formatearFecha(fecha: string): string {
   if (!fecha) return fecha;
 
   // Ya está en DD/MM/YYYY
   if (/^\d{2}\/\d{2}\/\d{4}$/.test(fecha)) return fecha;
 
-  // ISO o YYYY-MM-DD
+  // ISO (2026-04-14T...) o YYYY-MM-DD
   const match = fecha.match(/^(\d{4})-(\d{2})-(\d{2})/);
   if (match) {
     return `${match[3]}/${match[2]}/${match[1]}`;
@@ -87,13 +87,13 @@ export async function loadData(): Promise<{
       throw new Error(data.message || "Error al cargar datos");
     }
 
-    // Normalizar fechas del historial al mostrarlas
+    // Normalizar fechas del historial
     const history: Movement[] = (data.history || []).map((m: Movement) => ({
       ...m,
       fecha: formatearFecha(m.fecha),
-      ultimoMovimiento: m.fecha ? formatearFecha(m.fecha) : "",
     }));
 
+    // Normalizar ultimoMovimiento del inventario
     const inventory: Product[] = (data.inventory || []).map((p: Product) => ({
       ...p,
       ultimoMovimiento: p.ultimoMovimiento
