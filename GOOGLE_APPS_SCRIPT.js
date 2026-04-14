@@ -28,6 +28,57 @@ function fechaDD_MM_YYYY() {
 }
 
 // =====================================
+// FUNCIÓN GET (requerida para acceso externo)
+// =====================================
+
+function doGet(e) {
+  return ContentService.createTextOutput(
+    JSON.stringify({ success: true, message: "API activa" })
+  ).setMimeType(ContentService.MimeType.JSON);
+}
+
+// =====================================
+// FUNCIÓN PRINCIPAL (doPost)
+// =====================================
+
+function doPost(e) {
+  try {
+    var payload = JSON.parse(e.postData.contents);
+    var action = payload.action;
+    var result;
+
+    switch (action) {
+      case "getData":
+        result = getData();
+        break;
+      case "acquireLock":
+        result = acquireLock(payload.userName, payload.timestamp);
+        break;
+      case "releaseLock":
+        result = releaseLock(payload.userName);
+        break;
+      case "getLockStatus":
+        result = getLockStatus();
+        break;
+      case "saveMovement":
+        result = saveMovement(payload.payload);
+        break;
+      default:
+        result = { success: false, message: "Accion no reconocida" };
+    }
+
+    return ContentService.createTextOutput(
+      JSON.stringify(result)
+    ).setMimeType(ContentService.MimeType.JSON);
+
+  } catch (error) {
+    return ContentService.createTextOutput(
+      JSON.stringify({ success: false, message: "Error: " + error.toString() })
+    ).setMimeType(ContentService.MimeType.JSON);
+  }
+}
+
+// =====================================
 // HELPER: Enviar alerta de stock por correo
 // =====================================
 
@@ -84,56 +135,6 @@ function enviarAlertaStock(producto, responsable, fecha) {
     Logger.log("Alerta enviada OK: " + asunto);
   } catch (err) {
     Logger.log("Error enviando alerta: " + err.toString());
-  }
-}
-
-// =====================================
-// FUNCIÓN PRINCIPAL (doPost)
-// =====================================
-
-function doPost(e) {
-  try {
-    const payload = JSON.parse(e.postData.contents);
-    const action = payload.action;
-
-    switch (action) {
-      case "getData":
-        return ContentService.createTextOutput(
-          JSON.stringify(getData())
-        ).setMimeType(ContentService.MimeType.JSON);
-
-      case "acquireLock":
-        return ContentService.createTextOutput(
-          JSON.stringify(acquireLock(payload.userName, payload.timestamp))
-        ).setMimeType(ContentService.MimeType.JSON);
-
-      case "releaseLock":
-        return ContentService.createTextOutput(
-          JSON.stringify(releaseLock(payload.userName))
-        ).setMimeType(ContentService.MimeType.JSON);
-
-      case "getLockStatus":
-        return ContentService.createTextOutput(
-          JSON.stringify(getLockStatus())
-        ).setMimeType(ContentService.MimeType.JSON);
-
-      case "saveMovement":
-        return ContentService.createTextOutput(
-          JSON.stringify(saveMovement(payload.payload))
-        ).setMimeType(ContentService.MimeType.JSON);
-
-      default:
-        return ContentService.createTextOutput(
-          JSON.stringify({ success: false, message: "Accion no reconocida" })
-        ).setMimeType(ContentService.MimeType.JSON);
-    }
-  } catch (error) {
-    return ContentService.createTextOutput(
-      JSON.stringify({
-        success: false,
-        message: "Error: " + error.toString(),
-      })
-    ).setMimeType(ContentService.MimeType.JSON);
   }
 }
 
@@ -310,7 +311,6 @@ function saveMovement(movement) {
     movement.observacion,
   ]);
 
-  // Enviar alerta si el stock quedo en 0 o por debajo del minimo
   if (stockDespues <= stockMinimo) {
     var productoAlerta = {};
     productoAlerta["codigo"] = movement.codigo;
