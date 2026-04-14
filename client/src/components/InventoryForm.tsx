@@ -1,8 +1,14 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+} from "@/components/ui/card";
 import {
   Select,
   SelectContent,
@@ -12,45 +18,90 @@ import {
 } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
 import { Alert, AlertDescription } from "@/components/ui/alert";
-import { Loader2, CheckCircle, AlertCircle, Camera } from "lucide-react";
+import { Badge } from "@/components/ui/badge";
+import {
+  Loader2,
+  CheckCircle,
+  AlertCircle,
+  Camera,
+  PackageCheck,
+  PackagePlus,
+} from "lucide-react";
 import BarcodeScanner from "./BarcodeScanner";
-import { saveMovement } from "@/lib/googleSheetsService";
+import { saveMovement, Product } from "@/lib/googleSheetsService";
 
 interface InventoryFormProps {
   userName: string;
   onMovementSuccess: () => void;
   isLocked: boolean;
+  inventory: Product[];
 }
 
 export default function InventoryForm({
   userName,
   onMovementSuccess,
   isLocked,
+  inventory,
 }: InventoryFormProps) {
   const [codigo, setCodigo] = useState("");
   const [descripcion, setDescripcion] = useState("");
   const [categoria, setCategoria] = useState("");
   const [stockMinimo, setStockMinimo] = useState("0");
-  const [tipoMovimiento, setTipoMovimiento] = useState("entrada");
+  const [tipoMovimiento, setTipoMovimiento] = useState("salida");
   const [cantidad, setCantidad] = useState("1");
   const [observacion, setObservacion] = useState("");
   const [loading, setLoading] = useState(false);
+  const [productoEncontrado, setProductoEncontrado] = useState<Product | null>(null);
   const [message, setMessage] = useState<{
     type: "success" | "error" | "info";
     text: string;
   } | null>(null);
   const [scannerOpen, setScannerOpen] = useState(false);
 
+  // Buscar producto en inventario cada vez que cambia el código
+  useEffect(() => {
+    const codigoTrim = codigo.trim();
+    if (!codigoTrim) {
+      setProductoEncontrado(null);
+      setDescripcion("");
+      setCategoria("");
+      setStockMinimo("0");
+      return;
+    }
+    const encontrado = inventory.find(
+      (p) => p.codigo.trim().toLowerCase() === codigoTrim.toLowerCase()
+    );
+    if (encontrado) {
+      setProductoEncontrado(encontrado);
+      setDescripcion(encontrado.descripcion);
+      setCategoria(encontrado.categoria);
+      setStockMinimo(String(encontrado.stockMinimo));
+    } else {
+      setProductoEncontrado(null);
+      // Solo limpiar si venía de un producto previo encontrado
+      setDescripcion((prev) => (prev && productoEncontrado ? "" : prev));
+      setCategoria((prev) => (prev && productoEncontrado ? "" : prev));
+      setStockMinimo((prev) => (prev !== "0" && productoEncontrado ? "0" : prev));
+    }
+  }, [codigo, inventory]);
+
   const handleBarcodeDetected = (code: string) => {
     setCodigo(code);
     setScannerOpen(false);
+    // Enfocar cantidad automáticamente después del escaneo
+    setTimeout(() => {
+      const cantidadInput = document.getElementById("cantidad") as HTMLInputElement;
+      if (cantidadInput) {
+        cantidadInput.focus();
+        cantidadInput.select();
+      }
+    }, 150);
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setMessage(null);
 
-    // Validaciones
     if (!codigo.trim()) {
       setMessage({ type: "error", text: "El código es requerido" });
       return;
@@ -91,11 +142,10 @@ export default function InventoryForm({
       setDescripcion("");
       setCategoria("");
       setStockMinimo("0");
-      setTipoMovimiento("entrada");
       setCantidad("1");
       setObservacion("");
+      setProductoEncontrado(null);
 
-      // Recargar datos
       onMovementSuccess();
     } catch (error: any) {
       const msg = error?.message || "";
@@ -123,6 +173,8 @@ export default function InventoryForm({
       setLoading(false);
     }
   };
+
+  const esSalida = tipoMovimiento === "salida";
 
   return (
     <Card>
@@ -163,6 +215,25 @@ export default function InventoryForm({
         )}
 
         <form onSubmit={handleSubmit} className="space-y-6">
+          {/* Tipo de Movimiento — siempre visible primero */}
+          <div className="space-y-2">
+            <Label htmlFor="tipo">Tipo de Movimiento *</Label>
+            <Select
+              value={tipoMovimiento}
+              onValueChange={setTipoMovimiento}
+              disabled={isLocked || loading}
+            >
+              <SelectTrigger id="tipo">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="entrada">Entrada</SelectItem>
+                <SelectItem value="salida">Salida</SelectItem>
+                <SelectItem value="ajuste">Ajuste</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             {/* Código */}
             <div className="space-y-2 md:col-span-2">
@@ -171,10 +242,11 @@ export default function InventoryForm({
                 <Input
                   id="codigo"
                   type="text"
-                  placeholder="Ej: 001, SKU-123..."
+                  placeholder="Escanea o escribe el código..."
                   value={codigo}
                   onChange={(e) => setCodigo(e.target.value)}
                   disabled={isLocked || loading}
+                  autoComplete="off"
                 />
                 <Button
                   type="button"
@@ -187,76 +259,109 @@ export default function InventoryForm({
                   <Camera className="w-4 h-4" />
                 </Button>
               </div>
+
+              {/* Badge estado del producto */}
+              {codigo.trim() && (
+                <div className="flex items-center gap-2 pt-1">
+                  {productoEncontrado ? (
+                    <Badge className="bg-green-100 text-green-800 border-green-300 gap-1">
+                      <PackageCheck className="w-3 h-3" />
+                      Producto encontrado — Stock actual: {productoEncontrado.stockActual}
+                    </Badge>
+                  ) : (
+                    <Badge className="bg-yellow-100 text-yellow-800 border-yellow-300 gap-1">
+                      <PackagePlus className="w-3 h-3" />
+                      Producto nuevo — se creará al guardar
+                    </Badge>
+                  )}
+                </div>
+              )}
             </div>
 
-            {/* Descripción */}
+            {/* En modo SALIDA: mostrar datos del producto como solo lectura */}
+            {esSalida && productoEncontrado ? (
+              <div className="md:col-span-2 rounded-lg border border-gray-200 bg-gray-50 p-4 space-y-2">
+                <p className="text-xs text-gray-500 font-medium uppercase tracking-wide">Datos del producto</p>
+                <div className="grid grid-cols-2 gap-x-6 gap-y-1 text-sm">
+                  <div>
+                    <span className="text-gray-500">Descripción:</span>{" "}
+                    <span className="font-medium text-gray-900">{productoEncontrado.descripcion}</span>
+                  </div>
+                  <div>
+                    <span className="text-gray-500">Categoría:</span>{" "}
+                    <span className="font-medium text-gray-900">{productoEncontrado.categoria || "—"}</span>
+                  </div>
+                  <div>
+                    <span className="text-gray-500">Stock actual:</span>{" "}
+                    <span className="font-semibold text-blue-700">{productoEncontrado.stockActual}</span>
+                  </div>
+                  <div>
+                    <span className="text-gray-500">Stock mínimo:</span>{" "}
+                    <span className="font-medium text-gray-900">{productoEncontrado.stockMinimo}</span>
+                  </div>
+                </div>
+              </div>
+            ) : (
+              /* En modo ENTRADA / AJUSTE o producto nuevo: mostrar campos editables */
+              <>
+                <div className="space-y-2 md:col-span-2">
+                  <Label htmlFor="descripcion">Descripción *</Label>
+                  <Input
+                    id="descripcion"
+                    type="text"
+                    placeholder="Ej: Papel higiénico..."
+                    value={descripcion}
+                    onChange={(e) => setDescripcion(e.target.value)}
+                    disabled={isLocked || loading}
+                  />
+                </div>
+
+                <div className="space-y-2">
+                  <Label htmlFor="categoria">Categoría</Label>
+                  <Input
+                    id="categoria"
+                    type="text"
+                    placeholder="Ej: Baño, Limpieza..."
+                    value={categoria}
+                    onChange={(e) => setCategoria(e.target.value)}
+                    disabled={isLocked || loading}
+                  />
+                </div>
+
+                <div className="space-y-2">
+                  <Label htmlFor="stockMinimo">Stock Mínimo</Label>
+                  <Input
+                    id="stockMinimo"
+                    type="number"
+                    placeholder="0"
+                    value={stockMinimo}
+                    onChange={(e) => setStockMinimo(e.target.value)}
+                    disabled={isLocked || loading}
+                  />
+                </div>
+              </>
+            )}
+
+            {/* Cantidad — siempre visible */}
             <div className="space-y-2 md:col-span-2">
-              <Label htmlFor="descripcion">Descripción *</Label>
-              <Input
-                id="descripcion"
-                type="text"
-                placeholder="Ej: Papel higiénico..."
-                value={descripcion}
-                onChange={(e) => setDescripcion(e.target.value)}
-                disabled={isLocked || loading}
-              />
-            </div>
-
-            {/* Categoría */}
-            <div className="space-y-2">
-              <Label htmlFor="categoria">Categoría</Label>
-              <Input
-                id="categoria"
-                type="text"
-                placeholder="Ej: Baño, Limpieza..."
-                value={categoria}
-                onChange={(e) => setCategoria(e.target.value)}
-                disabled={isLocked || loading}
-              />
-            </div>
-
-            {/* Stock Mínimo */}
-            <div className="space-y-2">
-              <Label htmlFor="stockMinimo">Stock Mínimo</Label>
-              <Input
-                id="stockMinimo"
-                type="number"
-                placeholder="0"
-                value={stockMinimo}
-                onChange={(e) => setStockMinimo(e.target.value)}
-                disabled={isLocked || loading}
-              />
-            </div>
-
-            {/* Tipo de Movimiento */}
-            <div className="space-y-2">
-              <Label htmlFor="tipo">Tipo de Movimiento *</Label>
-              <Select
-                value={tipoMovimiento}
-                onValueChange={setTipoMovimiento}
-                disabled={isLocked || loading}
-              >
-                <SelectTrigger id="tipo">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="entrada">Entrada</SelectItem>
-                  <SelectItem value="salida">Salida</SelectItem>
-                  <SelectItem value="ajuste">Ajuste</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
-
-            {/* Cantidad */}
-            <div className="space-y-2">
-              <Label htmlFor="cantidad">Cantidad *</Label>
+              <Label htmlFor="cantidad">
+                Cantidad *
+                {esSalida && productoEncontrado && (
+                  <span className="text-gray-400 font-normal ml-2 text-xs">
+                    (máx. {productoEncontrado.stockActual})
+                  </span>
+                )}
+              </Label>
               <Input
                 id="cantidad"
                 type="number"
+                min="1"
+                max={esSalida && productoEncontrado ? productoEncontrado.stockActual : undefined}
                 placeholder="1"
                 value={cantidad}
                 onChange={(e) => setCantidad(e.target.value)}
                 disabled={isLocked || loading}
+                className="text-lg font-semibold"
               />
             </div>
           </div>
@@ -266,16 +371,16 @@ export default function InventoryForm({
             <Label htmlFor="observacion">Observación</Label>
             <Textarea
               id="observacion"
-              placeholder="Ej: Reposición mensual, entrega a baño 2..."
+              placeholder="Ej: Entrega a baño 2, reposición mensual..."
               value={observacion}
               onChange={(e) => setObservacion(e.target.value)}
               disabled={isLocked || loading}
-              rows={3}
+              rows={2}
             />
           </div>
 
           {/* Botones */}
-          <div className="flex gap-3 pt-4">
+          <div className="flex gap-3 pt-2">
             <Button
               type="submit"
               disabled={isLocked || loading}
@@ -299,9 +404,9 @@ export default function InventoryForm({
                 setDescripcion("");
                 setCategoria("");
                 setStockMinimo("0");
-                setTipoMovimiento("entrada");
                 setCantidad("1");
                 setObservacion("");
+                setProductoEncontrado(null);
                 setMessage(null);
               }}
               disabled={isLocked || loading}

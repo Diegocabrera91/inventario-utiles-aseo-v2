@@ -16,7 +16,6 @@ export default function Home() {
   const [showNameDialog, setShowNameDialog] = useState(false);
   const { inventory, history, loading, error, isLocked, lockUser, refetch } = useInventory(userName);
 
-  // Cargar nombre de usuario desde localStorage
   useEffect(() => {
     const savedName = localStorage.getItem("inventarioUserName");
     if (savedName) {
@@ -84,9 +83,7 @@ export default function Home() {
         </div>
       </header>
 
-      {/* Main Content */}
       <main className="container mx-auto px-4 py-8">
-        {/* Error Alert */}
         {error && (
           <Alert variant="destructive" className="mb-6">
             <AlertCircle className="h-4 w-4" />
@@ -94,7 +91,6 @@ export default function Home() {
           </Alert>
         )}
 
-        {/* Lock Alert */}
         {isLocked && (
           <Alert className="mb-6 bg-yellow-50 border-yellow-200">
             <AlertCircle className="h-4 w-4 text-yellow-600" />
@@ -140,7 +136,6 @@ export default function Home() {
           </Card>
         </div>
 
-        {/* Tabs */}
         <Tabs defaultValue="form" className="w-full">
           <TabsList className="grid w-full grid-cols-3">
             <TabsTrigger value="form" className="gap-2">
@@ -162,6 +157,7 @@ export default function Home() {
               userName={userName}
               onMovementSuccess={refetch}
               isLocked={isLocked}
+              inventory={inventory}
             />
           </TabsContent>
 
