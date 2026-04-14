@@ -222,6 +222,7 @@ export default function InventoryForm({
               value={tipoMovimiento}
               onValueChange={setTipoMovimiento}
               disabled={isLocked || loading}
+              name="tipo"
             >
               <SelectTrigger id="tipo">
                 <SelectValue />
@@ -241,6 +242,7 @@ export default function InventoryForm({
               <div className="flex gap-2">
                 <Input
                   id="codigo"
+                  name="codigo"
                   type="text"
                   placeholder="Escanea o escribe el código..."
                   value={codigo}
@@ -308,11 +310,13 @@ export default function InventoryForm({
                   <Label htmlFor="descripcion">Descripción *</Label>
                   <Input
                     id="descripcion"
+                    name="descripcion"
                     type="text"
                     placeholder="Ej: Papel higiénico..."
                     value={descripcion}
                     onChange={(e) => setDescripcion(e.target.value)}
                     disabled={isLocked || loading}
+                    autoComplete="off"
                   />
                 </div>
 
@@ -320,11 +324,13 @@ export default function InventoryForm({
                   <Label htmlFor="categoria">Categoría</Label>
                   <Input
                     id="categoria"
+                    name="categoria"
                     type="text"
                     placeholder="Ej: Baño, Limpieza..."
                     value={categoria}
                     onChange={(e) => setCategoria(e.target.value)}
                     disabled={isLocked || loading}
+                    autoComplete="off"
                   />
                 </div>
 
@@ -332,11 +338,13 @@ export default function InventoryForm({
                   <Label htmlFor="stockMinimo">Stock Mínimo</Label>
                   <Input
                     id="stockMinimo"
+                    name="stockMinimo"
                     type="number"
                     placeholder="0"
                     value={stockMinimo}
                     onChange={(e) => setStockMinimo(e.target.value)}
                     disabled={isLocked || loading}
+                    autoComplete="off"
                   />
                 </div>
               </>
@@ -354,6 +362,7 @@ export default function InventoryForm({
               </Label>
               <Input
                 id="cantidad"
+                name="cantidad"
                 type="number"
                 min="1"
                 max={esSalida && productoEncontrado ? productoEncontrado.stockActual : undefined}
@@ -361,6 +370,7 @@ export default function InventoryForm({
                 value={cantidad}
                 onChange={(e) => setCantidad(e.target.value)}
                 disabled={isLocked || loading}
+                autoComplete="off"
                 className="text-lg font-semibold"
               />
             </div>
@@ -371,11 +381,13 @@ export default function InventoryForm({
             <Label htmlFor="observacion">Observación</Label>
             <Textarea
               id="observacion"
+              name="observacion"
               placeholder="Ej: Entrega a baño 2, reposición mensual..."
               value={observacion}
               onChange={(e) => setObservacion(e.target.value)}
               disabled={isLocked || loading}
               rows={2}
+              autoComplete="off"
             />
           </div>
 

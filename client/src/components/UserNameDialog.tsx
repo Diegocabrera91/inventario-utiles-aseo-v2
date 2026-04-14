@@ -50,6 +50,7 @@ export default function UserNameDialog({ onNameSet }: UserNameDialogProps) {
               <Label htmlFor="name">Tu Nombre</Label>
               <Input
                 id="name"
+                name="name"
                 type="text"
                 placeholder="Ej: Juan, María, Carlos..."
                 value={name}
@@ -58,6 +59,7 @@ export default function UserNameDialog({ onNameSet }: UserNameDialogProps) {
                   setError("");
                 }}
                 autoFocus
+                autoComplete="name"
                 className="text-base"
               />
               {error && (
