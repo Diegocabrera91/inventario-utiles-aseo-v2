@@ -26,6 +26,19 @@ interface HistoryTableProps {
   movements: Movement[];
 }
 
+function formatFecha(fecha: string): string {
+  try {
+    const date = new Date(fecha);
+    if (isNaN(date.getTime())) return fecha;
+    const yyyy = date.getFullYear();
+    const mm = String(date.getMonth() + 1).padStart(2, "0");
+    const dd = String(date.getDate()).padStart(2, "0");
+    return `${yyyy}-${mm}-${dd}`;
+  } catch {
+    return fecha;
+  }
+}
+
 export default function HistoryTable({ movements }: HistoryTableProps) {
   const getMovementBadge = (tipo: string) => {
     switch (tipo.toLowerCase()) {
@@ -92,7 +105,7 @@ export default function HistoryTable({ movements }: HistoryTableProps) {
             return (
               <TableRow key={index}>
                 <TableCell className="text-sm text-gray-600">
-                  {movement.fecha}
+                  {formatFecha(movement.fecha)}
                 </TableCell>
                 <TableCell className="font-mono text-sm">{movement.codigo}</TableCell>
                 <TableCell className="font-medium">{movement.descripcion}</TableCell>
