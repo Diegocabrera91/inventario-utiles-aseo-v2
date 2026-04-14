@@ -7,7 +7,7 @@
  * - Control de locks para evitar conflictos de concurrencia
  */
 
-const API_URL = "https://script.google.com/macros/s/1n4jf4-RzNQ_HQQBjxHfOJefOyjIZPiyE-r1wZ-zzPfVsvu8umqUtsYRh/exec";
+const API_URL = "https://script.google.com/macros/s/AKfycbz6dhGOAhmPuds6_xLrQHiRwO3z2wu8EJJAG0Js4ifPimJuNAX1O7LUTBN0HfszZOeByA/exec";
 
 export interface Product {
   codigo: string;
