@@ -9,14 +9,13 @@ const SHEET_HISTORIAL = "Historial";
 const SHEET_LOCK = "Lock";
 const LOCK_TIMEOUT = 30000; // 30 segundos
 
+// Correo que recibe las alertas de stock bajo / sin stock
+const EMAIL_ALERTA = "diego.cabrera@tooltek.cl";
+
 // =====================================
 // HELPER: Fecha local DD/MM/YYYY (sin hora)
 // =====================================
 
-/**
- * Devuelve la fecha actual en zona horaria de Chile (America/Santiago)
- * formateada como DD/MM/YYYY, sin hora.
- */
 function fechaDD_MM_YYYY() {
   var ahora = new Date();
   var opciones = {
@@ -25,8 +24,69 @@ function fechaDD_MM_YYYY() {
     month: "2-digit",
     year: "numeric",
   };
-  // Formatter produce "14/04/2026" en es-CL con timeZone
   return new Intl.DateTimeFormat("es-CL", opciones).format(ahora);
+}
+
+// =====================================
+// HELPER: Enviar alerta de stock por correo
+// =====================================
+
+/**
+ * Envía un correo HTML a EMAIL_ALERTA cuando el stock de un producto
+ * cae al mínimo o se agota.
+ *
+ * @param {Object} producto  - { codigo, descripcion, categoria, stockDespues, stockMinimo }
+ * @param {string} responsable - Nombre del usuario que registró el movimiento
+ * @param {string} fecha       - Fecha del movimiento (DD/MM/YYYY)
+ */
+function enviarAlertaStock(producto, responsable, fecha) {
+  try {
+    var sinStock = producto.stockDespues <= 0;
+    var asunto = sinStock
+      ? "\u26a0\ufe0f SIN STOCK: " + producto.descripcion + " [" + producto.codigo + "]"
+      : "\u26a0\ufe0f Stock bajo: " + producto.descripcion + " [" + producto.codigo + "]";
+
+    var estadoColor = sinStock ? "#dc2626" : "#d97706";
+    var estadoTexto = sinStock ? "SIN STOCK" : "BAJO M\u00cdNIMO";
+
+    var cuerpo = ""
+      + "<div style='font-family:Arial,sans-serif;max-width:600px;margin:0 auto;'>"
+      + "  <div style='background:#1e3a5f;padding:20px 24px;border-radius:8px 8px 0 0;'>"
+      + "    <h2 style='color:#ffffff;margin:0;font-size:18px;'>⚠\ufe0f Alerta de Inventario</h2>"
+      + "    <p style='color:#93c5fd;margin:4px 0 0;font-size:13px;'>Sistema Inventario Útiles de Aseo &mdash; Tooltek</p>"
+      + "  </div>"
+      + "  <div style='background:#f8fafc;padding:24px;border:1px solid #e2e8f0;border-top:none;border-radius:0 0 8px 8px;'>"
+      + "    <table style='width:100%;border-collapse:collapse;'>"
+      + "      <tr><td style='padding:8px 0;color:#64748b;font-size:13px;width:140px;'>Estado</td>"
+      + "          <td><span style='background:" + estadoColor + ";color:#fff;padding:3px 10px;border-radius:4px;font-size:13px;font-weight:bold;'>" + estadoTexto + "</span></td></tr>"
+      + "      <tr><td style='padding:8px 0;color:#64748b;font-size:13px;'>C&oacute;digo</td>"
+      + "          <td style='font-family:monospace;font-size:14px;color:#1e293b;'>" + producto.codigo + "</td></tr>"
+      + "      <tr><td style='padding:8px 0;color:#64748b;font-size:13px;'>Descripci&oacute;n</td>"
+      + "          <td style='font-size:14px;color:#1e293b;font-weight:bold;'>" + producto.descripcion + "</td></tr>"
+      + "      <tr><td style='padding:8px 0;color:#64748b;font-size:13px;'>Categor&iacute;a</td>"
+      + "          <td style='font-size:14px;color:#1e293b;'>" + producto.categoria + "</td></tr>"
+      + "      <tr><td style='padding:8px 0;color:#64748b;font-size:13px;'>Stock actual</td>"
+      + "          <td style='font-size:22px;font-weight:bold;color:" + estadoColor + ";'>" + producto.stockDespues + "</td></tr>"
+      + "      <tr><td style='padding:8px 0;color:#64748b;font-size:13px;'>Stock m&iacute;nimo</td>"
+      + "          <td style='font-size:14px;color:#475569;'>" + producto.stockMinimo + "</td></tr>"
+      + "      <tr><td style='padding:8px 0;color:#64748b;font-size:13px;'>Registrado por</td>"
+      + "          <td style='font-size:14px;color:#1e293b;'>" + responsable + "</td></tr>"
+      + "      <tr><td style='padding:8px 0;color:#64748b;font-size:13px;'>Fecha</td>"
+      + "          <td style='font-size:14px;color:#1e293b;'>" + fecha + "</td></tr>"
+      + "    </table>"
+      + "    <p style='margin-top:20px;font-size:12px;color:#94a3b8;'>Este correo fue generado automáticamente por el sistema de inventario.</p>"
+      + "  </div>"
+      + "</div>";
+
+    MailApp.sendEmail({
+      to: EMAIL_ALERTA,
+      subject: asunto,
+      htmlBody: cuerpo,
+    });
+  } catch (err) {
+    // No interrumpir el flujo si el correo falla
+    Logger.log("Error enviando alerta de stock: " + err.toString());
+  }
 }
 
 // =====================================
@@ -86,7 +146,6 @@ function doPost(e) {
 function getData() {
   const ss = SpreadsheetApp.getActiveSpreadsheet();
 
-  // Obtener inventario
   const inventarioSheet = ss.getSheetByName(SHEET_INVENTARIO);
   const inventarioData = inventarioSheet.getDataRange().getValues();
   const inventario = inventarioData
@@ -99,9 +158,8 @@ function getData() {
       stockMinimo: row[4] || 0,
       ultimoMovimiento: row[5] ? String(row[5]) : "",
     }))
-    .filter((item) => item.codigo); // Filtrar filas vacías
+    .filter((item) => item.codigo);
 
-  // Obtener historial
   const historialSheet = ss.getSheetByName(SHEET_HISTORIAL);
   const historialData = historialSheet.getDataRange().getValues();
   const historial = historialData
@@ -118,7 +176,7 @@ function getData() {
       stockDespues: row[8] || 0,
       observacion: row[9] || "",
     }))
-    .filter((item) => item.codigo); // Filtrar filas vacías
+    .filter((item) => item.codigo);
 
   return {
     success: true,
@@ -136,7 +194,6 @@ function acquireLock(userName, timestamp) {
   const lockSheet = ss.getSheetByName(SHEET_LOCK);
   const lockData = lockSheet.getDataRange().getValues();
 
-  // Verificar si hay un lock activo
   if (lockData.length > 1) {
     const lastLock = lockData[lockData.length - 1];
     const lockTime = new Date(lastLock[1]).getTime();
@@ -145,17 +202,13 @@ function acquireLock(userName, timestamp) {
     if (now - lockTime < LOCK_TIMEOUT) {
       return {
         success: false,
-        message: `El inventario está siendo modificado por ${lastLock[0]}`,
+        message: "El inventario está siendo modificado por " + lastLock[0],
       };
     }
   }
 
   lockSheet.appendRow([userName, timestamp, true]);
-
-  return {
-    success: true,
-    message: "Lock adquirido",
-  };
+  return { success: true, message: "Lock adquirido" };
 }
 
 function releaseLock(userName) {
@@ -167,10 +220,7 @@ function releaseLock(userName) {
     lockSheet.deleteRows(2, lockData.length - 1);
   }
 
-  return {
-    success: true,
-    message: "Lock liberado",
-  };
+  return { success: true, message: "Lock liberado" };
 }
 
 function getLockStatus() {
@@ -179,11 +229,7 @@ function getLockStatus() {
   const lockData = lockSheet.getDataRange().getValues();
 
   if (lockData.length <= 1) {
-    return {
-      isLocked: false,
-      lockedBy: null,
-      timestamp: null,
-    };
+    return { isLocked: false, lockedBy: null, timestamp: null };
   }
 
   const lastLock = lockData[lockData.length - 1];
@@ -191,11 +237,7 @@ function getLockStatus() {
   const now = new Date().getTime();
 
   if (now - lockTime > LOCK_TIMEOUT) {
-    return {
-      isLocked: false,
-      lockedBy: null,
-      timestamp: null,
-    };
+    return { isLocked: false, lockedBy: null, timestamp: null };
   }
 
   return {
@@ -218,11 +260,13 @@ function saveMovement(movement) {
   const inventarioData = inventarioSheet.getDataRange().getValues();
   let productRow = -1;
   let stockAntes = 0;
+  let stockMinimo = movement.stockMinimo || 0;
 
   for (let i = 1; i < inventarioData.length; i++) {
     if (inventarioData[i][0] === movement.codigo) {
       productRow = i + 1;
       stockAntes = inventarioData[i][3];
+      stockMinimo = inventarioData[i][4] || movement.stockMinimo || 0;
       break;
     }
   }
@@ -234,28 +278,24 @@ function saveMovement(movement) {
   } else if (movement.tipo === "salida") {
     stockDespues = stockAntes - movement.cantidad;
     if (stockDespues < 0) {
-      return {
-        success: false,
-        message: "Stock insuficiente para realizar la salida",
-      };
+      return { success: false, message: "Stock insuficiente para realizar la salida" };
     }
   } else if (movement.tipo === "ajuste") {
     stockDespues = movement.cantidad;
   }
 
-  // Fecha solo DD/MM/YYYY, sin hora
   var fecha = movement.fecha || fechaDD_MM_YYYY();
 
   if (productRow > 0) {
     inventarioSheet.getRange(productRow, 4).setValue(stockDespues);
-    inventarioSheet.getRange(productRow, 6).setValue(fecha); // ultimoMovimiento
+    inventarioSheet.getRange(productRow, 6).setValue(fecha);
   } else {
     inventarioSheet.appendRow([
       movement.codigo,
       movement.descripcion,
       movement.categoria,
       stockDespues,
-      movement.stockMinimo,
+      stockMinimo,
       fecha,
     ]);
   }
@@ -273,10 +313,22 @@ function saveMovement(movement) {
     movement.observacion,
   ]);
 
-  return {
-    success: true,
-    message: "Movimiento guardado exitosamente",
-  };
+  // Enviar alerta si el stock quedó en 0 o por debajo del mínimo
+  if (stockDespues <= stockMinimo) {
+    enviarAlertaStock(
+      {
+        codigo: movement.codigo,
+        descripcion: movement.descripcion,
+        categoria: movement.categoria,
+        stockDespues: stockDespues,
+        stockMinimo: stockMinimo,
+      },
+      movement.responsable,
+      fecha
+    );
+  }
+
+  return { success: true, message: "Movimiento guardado exitosamente" };
 }
 
 // =====================================
@@ -288,4 +340,23 @@ function testScript() {
   Logger.log("Datos cargados:");
   Logger.log("Inventario: " + result.inventory.length + " productos");
   Logger.log("Historial: " + result.history.length + " movimientos");
+}
+
+/**
+ * Prueba manual del correo de alerta.
+ * Ejecutar desde el editor de Apps Script para verificar que llega el correo.
+ */
+function testAlertaStock() {
+  enviarAlertaStock(
+    {
+      codigo: "PROD-001",
+      descripcion: "Escoba Industrial",
+      categoria: "Limpieza",
+      stockDespues: 0,
+      stockMinimo: 5,
+    },
+    "Diego Cabrera",
+    fechaDD_MM_YYYY()
+  );
+  Logger.log("Correo de prueba enviado a " + EMAIL_ALERTA);
 }
