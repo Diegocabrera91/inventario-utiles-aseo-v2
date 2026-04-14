@@ -7,9 +7,7 @@
  * - Control de locks para evitar conflictos de concurrencia
  */
 
-const API_URL =
-  import.meta.env.VITE_GOOGLE_SHEETS_API_URL ||
-  "https://script.google.com/macros/s/YOUR_SCRIPT_ID/exec";
+const API_URL = "https://script.google.com/macros/s/1n4jf4-RzNQ_HQQBjxHfOJefOyjIZPiyE-r1wZ-zzPfVsvu8umqUtsYRh/exec";
 
 export interface Product {
   codigo: string;
@@ -210,7 +208,7 @@ export async function saveMovement(
           action: "saveMovement",
           payload: {
             ...movement,
-            fecha: fechaLocal(), // DD/MM/YYYY hora local del usuario
+            fecha: fechaLocal(),
             responsable: userName,
           },
         }),
