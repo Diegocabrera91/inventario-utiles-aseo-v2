@@ -32,7 +32,7 @@ jobs:
         run: npx vite build --base /inventario-utiles-aseo-v2/ --config vite.config.ts
         env:
           NODE_ENV: production
-          VITE_GOOGLE_SHEETS_API_URL: "https://script.google.com/macros/s/AKfycbzeXfH1FKF0tk91IvtV2fnNbtbr8QbJsnu_05FED1VuKbybfuHXMKex6cXnhz6H_z0U-A/exec"
+          VITE_GOOGLE_SHEETS_API_URL: "https://script.google.com/macros/s/AKfycbxrC66DgEF0ztQz6aG6VGjPbHEqJN-mMeht8MTowjRCBdXR3js1NslCHQfpPAyRNARlDQ/exec"
 
       - name: Copy build to docs
         run: |
