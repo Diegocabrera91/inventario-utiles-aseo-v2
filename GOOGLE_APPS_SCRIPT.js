@@ -31,61 +31,59 @@ function fechaDD_MM_YYYY() {
 // HELPER: Enviar alerta de stock por correo
 // =====================================
 
-/**
- * Envía un correo HTML a EMAIL_ALERTA cuando el stock de un producto
- * cae al mínimo o se agota.
- *
- * @param {Object} producto  - { codigo, descripcion, categoria, stockDespues, stockMinimo }
- * @param {string} responsable - Nombre del usuario que registró el movimiento
- * @param {string} fecha       - Fecha del movimiento (DD/MM/YYYY)
- */
 function enviarAlertaStock(producto, responsable, fecha) {
   try {
-    var sinStock = producto.stockDespues <= 0;
+    var codigo = producto["codigo"] || "";
+    var descripcion = producto["descripcion"] || "";
+    var categoria = producto["categoria"] || "";
+    var stockDespues = producto["stockDespues"] || 0;
+    var stockMinimo = producto["stockMinimo"] || 0;
+
+    var sinStock = stockDespues <= 0;
     var asunto = sinStock
-      ? "\u26a0\ufe0f SIN STOCK: " + producto.descripcion + " [" + producto.codigo + "]"
-      : "\u26a0\ufe0f Stock bajo: " + producto.descripcion + " [" + producto.codigo + "]";
+      ? "SIN STOCK: " + descripcion + " [" + codigo + "]"
+      : "Stock bajo: " + descripcion + " [" + codigo + "]";
 
+    var estadoTexto = sinStock ? "SIN STOCK" : "BAJO MINIMO";
     var estadoColor = sinStock ? "#dc2626" : "#d97706";
-    var estadoTexto = sinStock ? "SIN STOCK" : "BAJO M\u00cdNIMO";
 
-    var cuerpo = ""
-      + "<div style='font-family:Arial,sans-serif;max-width:600px;margin:0 auto;'>"
-      + "  <div style='background:#1e3a5f;padding:20px 24px;border-radius:8px 8px 0 0;'>"
-      + "    <h2 style='color:#ffffff;margin:0;font-size:18px;'>⚠\ufe0f Alerta de Inventario</h2>"
-      + "    <p style='color:#93c5fd;margin:4px 0 0;font-size:13px;'>Sistema Inventario Útiles de Aseo &mdash; Tooltek</p>"
-      + "  </div>"
-      + "  <div style='background:#f8fafc;padding:24px;border:1px solid #e2e8f0;border-top:none;border-radius:0 0 8px 8px;'>"
-      + "    <table style='width:100%;border-collapse:collapse;'>"
-      + "      <tr><td style='padding:8px 0;color:#64748b;font-size:13px;width:140px;'>Estado</td>"
-      + "          <td><span style='background:" + estadoColor + ";color:#fff;padding:3px 10px;border-radius:4px;font-size:13px;font-weight:bold;'>" + estadoTexto + "</span></td></tr>"
-      + "      <tr><td style='padding:8px 0;color:#64748b;font-size:13px;'>C&oacute;digo</td>"
-      + "          <td style='font-family:monospace;font-size:14px;color:#1e293b;'>" + producto.codigo + "</td></tr>"
-      + "      <tr><td style='padding:8px 0;color:#64748b;font-size:13px;'>Descripci&oacute;n</td>"
-      + "          <td style='font-size:14px;color:#1e293b;font-weight:bold;'>" + producto.descripcion + "</td></tr>"
-      + "      <tr><td style='padding:8px 0;color:#64748b;font-size:13px;'>Categor&iacute;a</td>"
-      + "          <td style='font-size:14px;color:#1e293b;'>" + producto.categoria + "</td></tr>"
-      + "      <tr><td style='padding:8px 0;color:#64748b;font-size:13px;'>Stock actual</td>"
-      + "          <td style='font-size:22px;font-weight:bold;color:" + estadoColor + ";'>" + producto.stockDespues + "</td></tr>"
-      + "      <tr><td style='padding:8px 0;color:#64748b;font-size:13px;'>Stock m&iacute;nimo</td>"
-      + "          <td style='font-size:14px;color:#475569;'>" + producto.stockMinimo + "</td></tr>"
-      + "      <tr><td style='padding:8px 0;color:#64748b;font-size:13px;'>Registrado por</td>"
-      + "          <td style='font-size:14px;color:#1e293b;'>" + responsable + "</td></tr>"
-      + "      <tr><td style='padding:8px 0;color:#64748b;font-size:13px;'>Fecha</td>"
-      + "          <td style='font-size:14px;color:#1e293b;'>" + fecha + "</td></tr>"
-      + "    </table>"
-      + "    <p style='margin-top:20px;font-size:12px;color:#94a3b8;'>Este correo fue generado automáticamente por el sistema de inventario.</p>"
-      + "  </div>"
+    var cuerpo = "<div style='font-family:Arial,sans-serif;max-width:600px;margin:0 auto;'>"
+      + "<div style='background:#1e3a5f;padding:20px 24px;border-radius:8px 8px 0 0;'>"
+      + "<h2 style='color:#ffffff;margin:0;font-size:18px;'>Alerta de Inventario</h2>"
+      + "<p style='color:#93c5fd;margin:4px 0 0;font-size:13px;'>Sistema Inventario Utiles de Aseo - Tooltek</p>"
+      + "</div>"
+      + "<div style='background:#f8fafc;padding:24px;border:1px solid #e2e8f0;border-top:none;border-radius:0 0 8px 8px;'>"
+      + "<table style='width:100%;border-collapse:collapse;'>"
+      + "<tr><td style='padding:8px 0;color:#64748b;font-size:13px;width:140px;'>Estado</td>"
+      + "<td><span style='background:" + estadoColor + ";color:#fff;padding:3px 10px;border-radius:4px;font-size:13px;font-weight:bold;'>" + estadoTexto + "</span></td></tr>"
+      + "<tr><td style='padding:8px 0;color:#64748b;font-size:13px;'>Codigo</td>"
+      + "<td style='font-family:monospace;font-size:14px;color:#1e293b;'>" + codigo + "</td></tr>"
+      + "<tr><td style='padding:8px 0;color:#64748b;font-size:13px;'>Descripcion</td>"
+      + "<td style='font-size:14px;color:#1e293b;font-weight:bold;'>" + descripcion + "</td></tr>"
+      + "<tr><td style='padding:8px 0;color:#64748b;font-size:13px;'>Categoria</td>"
+      + "<td style='font-size:14px;color:#1e293b;'>" + categoria + "</td></tr>"
+      + "<tr><td style='padding:8px 0;color:#64748b;font-size:13px;'>Stock actual</td>"
+      + "<td style='font-size:22px;font-weight:bold;color:" + estadoColor + ";'>" + stockDespues + "</td></tr>"
+      + "<tr><td style='padding:8px 0;color:#64748b;font-size:13px;'>Stock minimo</td>"
+      + "<td style='font-size:14px;color:#475569;'>" + stockMinimo + "</td></tr>"
+      + "<tr><td style='padding:8px 0;color:#64748b;font-size:13px;'>Registrado por</td>"
+      + "<td style='font-size:14px;color:#1e293b;'>" + responsable + "</td></tr>"
+      + "<tr><td style='padding:8px 0;color:#64748b;font-size:13px;'>Fecha</td>"
+      + "<td style='font-size:14px;color:#1e293b;'>" + fecha + "</td></tr>"
+      + "</table>"
+      + "<p style='margin-top:20px;font-size:12px;color:#94a3b8;'>Este correo fue generado automaticamente por el sistema de inventario.</p>"
+      + "</div>"
       + "</div>";
 
     MailApp.sendEmail({
       to: EMAIL_ALERTA,
       subject: asunto,
-      htmlBody: cuerpo,
+      htmlBody: cuerpo
     });
+
+    Logger.log("Alerta enviada OK: " + asunto);
   } catch (err) {
-    // No interrumpir el flujo si el correo falla
-    Logger.log("Error enviando alerta de stock: " + err.toString());
+    Logger.log("Error enviando alerta: " + err.toString());
   }
 }
 
@@ -126,7 +124,7 @@ function doPost(e) {
 
       default:
         return ContentService.createTextOutput(
-          JSON.stringify({ success: false, message: "Acción no reconocida" })
+          JSON.stringify({ success: false, message: "Accion no reconocida" })
         ).setMimeType(ContentService.MimeType.JSON);
     }
   } catch (error) {
@@ -202,7 +200,7 @@ function acquireLock(userName, timestamp) {
     if (now - lockTime < LOCK_TIMEOUT) {
       return {
         success: false,
-        message: "El inventario está siendo modificado por " + lastLock[0],
+        message: "El inventario esta siendo modificado por " + lastLock[0],
       };
     }
   }
@@ -256,7 +254,6 @@ function saveMovement(movement) {
   const inventarioSheet = ss.getSheetByName(SHEET_INVENTARIO);
   const historialSheet = ss.getSheetByName(SHEET_HISTORIAL);
 
-  // Buscar producto en inventario
   const inventarioData = inventarioSheet.getDataRange().getValues();
   let productRow = -1;
   let stockAntes = 0;
@@ -313,26 +310,22 @@ function saveMovement(movement) {
     movement.observacion,
   ]);
 
-  // Enviar alerta si el stock quedó en 0 o por debajo del mínimo
+  // Enviar alerta si el stock quedo en 0 o por debajo del minimo
   if (stockDespues <= stockMinimo) {
-    enviarAlertaStock(
-      {
-        codigo: movement.codigo,
-        descripcion: movement.descripcion,
-        categoria: movement.categoria,
-        stockDespues: stockDespues,
-        stockMinimo: stockMinimo,
-      },
-      movement.responsable,
-      fecha
-    );
+    var productoAlerta = {};
+    productoAlerta["codigo"] = movement.codigo;
+    productoAlerta["descripcion"] = movement.descripcion;
+    productoAlerta["categoria"] = movement.categoria;
+    productoAlerta["stockDespues"] = stockDespues;
+    productoAlerta["stockMinimo"] = stockMinimo;
+    enviarAlertaStock(productoAlerta, movement.responsable, fecha);
   }
 
   return { success: true, message: "Movimiento guardado exitosamente" };
 }
 
 // =====================================
-// FUNCIÓN DE PRUEBA (Opcional)
+// FUNCIONES DE PRUEBA
 // =====================================
 
 function testScript() {
@@ -342,21 +335,13 @@ function testScript() {
   Logger.log("Historial: " + result.history.length + " movimientos");
 }
 
-/**
- * Prueba manual del correo de alerta.
- * Ejecutar desde el editor de Apps Script para verificar que llega el correo.
- */
 function testAlertaStock() {
-  enviarAlertaStock(
-    {
-      codigo: "PROD-001",
-      descripcion: "Escoba Industrial",
-      categoria: "Limpieza",
-      stockDespues: 0,
-      stockMinimo: 5,
-    },
-    "Diego Cabrera",
-    fechaDD_MM_YYYY()
-  );
+  var p = {};
+  p["codigo"] = "PROD-001";
+  p["descripcion"] = "Escoba Industrial";
+  p["categoria"] = "Limpieza";
+  p["stockDespues"] = 2;
+  p["stockMinimo"] = 5;
+  enviarAlertaStock(p, "Diego Cabrera", fechaDD_MM_YYYY());
   Logger.log("Correo de prueba enviado a " + EMAIL_ALERTA);
 }
